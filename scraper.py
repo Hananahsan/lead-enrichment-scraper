@@ -17,6 +17,17 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
 from datetime import datetime
+from pathlib import Path
+
+# Load .env file if it exists
+_env_path = Path(__file__).resolve().parent / ".env"
+if _env_path.exists():
+    with open(_env_path) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _key, _val = _line.split("=", 1)
+                os.environ.setdefault(_key.strip(), _val.strip())
 
 import pandas as pd
 import requests
@@ -27,6 +38,12 @@ try:
     HAS_PLAYWRIGHT = True
 except ImportError:
     HAS_PLAYWRIGHT = False
+
+try:
+    import anthropic
+    HAS_CLAUDE = True
+except ImportError:
+    HAS_CLAUDE = False
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -41,6 +58,7 @@ MAX_WORKERS = 3  # Lower for headless browser to avoid resource issues
 
 PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 PAGESPEED_API_KEY = os.environ.get("PAGESPEED_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 
 BOOKING_TOOLS = {
     "Calendly": [r"calendly\.com"],
@@ -1348,6 +1366,287 @@ def check_facebook_ads(url):
 
 
 # =============================================================================
+# SOCIAL MEDIA PROFILE SCRAPING
+# =============================================================================
+
+def scrape_social_profiles(soup, html):
+    """Scrape social media profiles found on the website for follower counts, activity, etc."""
+    data = {
+        "social_profiles": {},
+        "social_total_followers": 0,
+        "social_most_active_platform": "",
+        "social_last_post_date": "",
+        "social_posting_frequency": "",
+        "social_summary": "",
+    }
+
+    # Extract social links from the page
+    social_patterns = {
+        "linkedin": r"linkedin\.com/(?:company|in)/([^/\"?\s]+)",
+        "instagram": r"instagram\.com/([^/\"?\s]+)",
+        "youtube": r"youtube\.com/(?:@|c/|channel/|user/)([^/\"?\s]+)",
+        "twitter": r"(?:twitter\.com|x\.com)/([^/\"?\s]+)",
+        "facebook": r"facebook\.com/([^/\"?\s]+)",
+        "tiktok": r"tiktok\.com/@([^/\"?\s]+)",
+    }
+
+    found_profiles = {}
+    for platform, pattern in social_patterns.items():
+        match = re.search(pattern, html, re.I)
+        if match:
+            handle = match.group(1).strip("/").strip()
+            if handle and handle not in ("share", "sharer", "intent", "hashtag", "search"):
+                found_profiles[platform] = handle
+
+    if not found_profiles and not HAS_PLAYWRIGHT:
+        data["social_summary"] = "No social profiles found or Playwright not available"
+        return data
+
+    if not HAS_PLAYWRIGHT:
+        data["social_profiles"] = {p: {"handle": h, "url": f"https://{p}.com/{h}"} for p, h in found_profiles.items()}
+        data["social_summary"] = f"Found {len(found_profiles)} profile(s), headless browser needed for details"
+        return data
+
+    total_followers = 0
+    platform_activity = {}
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            )
+
+            for platform, handle in found_profiles.items():
+                profile = {"handle": handle, "followers": None, "last_post": None, "posts_visible": 0}
+
+                try:
+                    page = context.new_page()
+
+                    if platform == "instagram":
+                        page.goto(f"https://www.instagram.com/{handle}/", wait_until="domcontentloaded", timeout=15000)
+                        page.wait_for_timeout(3000)
+                        ig_text = page.content()
+                        # Instagram meta tags often have follower count
+                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", ig_text)
+                        if follower_match:
+                            profile["followers"] = follower_match.group(1)
+                        # Also try meta description
+                        meta_match = re.search(r'([\d,.]+[KkMm]?)\s*Followers', ig_text)
+                        if meta_match:
+                            profile["followers"] = meta_match.group(1)
+                        profile["url"] = f"https://www.instagram.com/{handle}/"
+
+                    elif platform == "linkedin":
+                        profile["url"] = f"https://www.linkedin.com/company/{handle}/"
+                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                        page.wait_for_timeout(3000)
+                        li_text = page.inner_text("body") if page.query_selector("body") else ""
+                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:followers|Followers)", li_text)
+                        if follower_match:
+                            profile["followers"] = follower_match.group(1)
+                        employee_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:employees|associated members)", li_text)
+                        if employee_match:
+                            profile["employees"] = employee_match.group(1)
+
+                    elif platform == "youtube":
+                        yt_url = f"https://www.youtube.com/@{handle}"
+                        page.goto(yt_url, wait_until="domcontentloaded", timeout=15000)
+                        page.wait_for_timeout(3000)
+                        yt_text = page.inner_text("body") if page.query_selector("body") else ""
+                        sub_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:subscribers|Subscribers)", yt_text)
+                        if sub_match:
+                            profile["followers"] = sub_match.group(1)
+                        # Try to get video count
+                        video_match = re.search(r"([\d,.]+)\s*(?:videos|Videos)", yt_text)
+                        if video_match:
+                            profile["video_count"] = video_match.group(1)
+                        profile["url"] = yt_url
+
+                    elif platform == "twitter":
+                        profile["url"] = f"https://x.com/{handle}"
+                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                        page.wait_for_timeout(3000)
+                        tw_text = page.inner_text("body") if page.query_selector("body") else ""
+                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", tw_text)
+                        if follower_match:
+                            profile["followers"] = follower_match.group(1)
+
+                    elif platform == "facebook":
+                        profile["url"] = f"https://www.facebook.com/{handle}"
+                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                        page.wait_for_timeout(3000)
+                        fb_text = page.inner_text("body") if page.query_selector("body") else ""
+                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:followers|people follow|likes)", fb_text)
+                        if follower_match:
+                            profile["followers"] = follower_match.group(1)
+
+                    elif platform == "tiktok":
+                        profile["url"] = f"https://www.tiktok.com/@{handle}"
+                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                        page.wait_for_timeout(3000)
+                        tt_text = page.inner_text("body") if page.query_selector("body") else ""
+                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", tt_text)
+                        if follower_match:
+                            profile["followers"] = follower_match.group(1)
+
+                    page.close()
+
+                except Exception:
+                    profile["error"] = "Could not scrape"
+                    try:
+                        page.close()
+                    except Exception:
+                        pass
+
+                # Parse follower count to number
+                if profile.get("followers"):
+                    f_str = str(profile["followers"]).replace(",", "")
+                    multiplier = 1
+                    if f_str.upper().endswith("K"):
+                        multiplier = 1000
+                        f_str = f_str[:-1]
+                    elif f_str.upper().endswith("M"):
+                        multiplier = 1000000
+                        f_str = f_str[:-1]
+                    try:
+                        count = int(float(f_str) * multiplier)
+                        profile["followers_numeric"] = count
+                        total_followers += count
+                        platform_activity[platform] = count
+                    except (ValueError, TypeError):
+                        pass
+
+                data["social_profiles"][platform] = profile
+
+            browser.close()
+
+    except Exception:
+        data["social_summary"] = "Social scraping failed"
+        return data
+
+    data["social_total_followers"] = total_followers
+
+    if platform_activity:
+        data["social_most_active_platform"] = max(platform_activity, key=platform_activity.get)
+
+    # Summary
+    profile_summaries = []
+    for plat, prof in data["social_profiles"].items():
+        f = prof.get("followers", "unknown")
+        profile_summaries.append(f"{plat}: {f} followers")
+    data["social_summary"] = "; ".join(profile_summaries) if profile_summaries else "No profiles scraped"
+
+    return data
+
+
+# =============================================================================
+# AI-POWERED ANALYSIS (Claude API)
+# =============================================================================
+
+def generate_ai_analysis(intel):
+    """Use Claude to generate a natural-language audit summary with outreach hooks."""
+    data = {
+        "ai_audit_summary": "",
+        "ai_positioning_gaps": "",
+        "ai_outreach_hooks": "",
+        "ai_overall_score": "",
+    }
+
+    if not HAS_CLAUDE or not ANTHROPIC_API_KEY:
+        data["ai_audit_summary"] = "Claude API key not configured (set ANTHROPIC_API_KEY env var)"
+        return data
+
+    # Build a structured summary of all intel for Claude
+    summary_parts = []
+    summary_parts.append(f"Website: {intel.get('website_url', 'N/A')}")
+    summary_parts.append(f"Booking tool: {intel.get('booking_booking_tool', 'N/A')}")
+    summary_parts.append(f"CTA above fold (mobile): {intel.get('mobile_cta_visible_above_fold', 'N/A')}")
+    summary_parts.append(f"Clicks to book: {intel.get('booking_clicks_to_book', 'N/A')}")
+    summary_parts.append(f"Booking CTA works: {intel.get('booking_booking_cta_works', 'N/A')}")
+    summary_parts.append(f"Offer type: {intel.get('offer_offer_type', 'N/A')}")
+    summary_parts.append(f"Price range: {intel.get('offer_price_range', 'N/A')}")
+    summary_parts.append(f"Target client: {intel.get('offer_target_client', 'N/A')}")
+    summary_parts.append(f"Sales model: {intel.get('offer_sales_model', 'N/A')}")
+    summary_parts.append(f"Solo/multi coach: {intel.get('offer_solo_or_multi_coach', 'N/A')}")
+    summary_parts.append(f"Has active blog: {intel.get('audience_has_active_blog', 'N/A')}")
+    summary_parts.append(f"Has podcast: {intel.get('audience_has_podcast', 'N/A')}")
+    summary_parts.append(f"Has YouTube: {intel.get('audience_has_youtube', 'N/A')}")
+    summary_parts.append(f"Testimonials count: {intel.get('audience_testimonial_count', 'N/A')}")
+    summary_parts.append(f"Media mentions: {intel.get('audience_social_proof_media_mentions', 'N/A')}")
+    summary_parts.append(f"Multiple audiences: {intel.get('audience_serves_multiple_audiences', 'N/A')}")
+    summary_parts.append(f"Copyright year: {intel.get('timing_copyright_year', 'N/A')}")
+    summary_parts.append(f"Now enrolling: {intel.get('timing_now_enrolling_banner', 'N/A')}")
+    summary_parts.append(f"Hiring indicators: {intel.get('timing_hiring_indicators', 'N/A')}")
+    summary_parts.append(f"Running paid ads: {intel.get('ads_likely_running_paid', 'N/A')}")
+    summary_parts.append(f"Facebook ads active: {intel.get('fbads_fb_ads_found', 'N/A')} ({intel.get('fbads_fb_ads_count', 0)} ads)")
+    summary_parts.append(f"PageSpeed performance: {intel.get('pagespeed_score_performance', 'N/A')}/100")
+    summary_parts.append(f"PageSpeed SEO: {intel.get('pagespeed_score_seo', 'N/A')}/100")
+    summary_parts.append(f"Mobile load time: {intel.get('mobile_load_time_seconds', 'N/A')}s")
+    summary_parts.append(f"Technical issues: {intel.get('gaps_technical_issues_summary', 'N/A')}")
+    summary_parts.append(f"Broken links: {len(intel.get('gaps_broken_links', []))}")
+    summary_parts.append(f"Missing favicon: {intel.get('gaps_missing_favicon', 'N/A')}")
+    summary_parts.append(f"Conflicting CTAs: {intel.get('gaps_conflicting_ctas', 'N/A')} ({intel.get('gaps_cta_count', 0)} CTAs)")
+    summary_parts.append(f"Site description: {intel.get('offer_offer_description', 'N/A')}")
+    summary_parts.append(f"Pages crawled: {intel.get('crawl_pages_scraped', 'N/A')}")
+    summary_parts.append(f"Total prices found: {intel.get('offer_price_points', 'N/A')}")
+    summary_parts.append(f"Social profiles: {intel.get('social_summary', 'N/A')}")
+    summary_parts.append(f"Total social followers: {intel.get('social_total_followers', 'N/A')}")
+
+    site_data = "\n".join(summary_parts)
+
+    prompt = f"""You are a coaching business analyst. Analyze this website audit data for a coaching/consulting business and provide a concise, actionable report.
+
+WEBSITE AUDIT DATA:
+{site_data}
+
+Respond with EXACTLY this format (keep each section to 2-4 sentences max):
+
+AUDIT SUMMARY:
+[Brief assessment of the coaching business's online presence, what they do well, and overall impression]
+
+POSITIONING GAPS:
+[Specific weaknesses in their website, booking flow, offer clarity, or marketing that are costing them clients]
+
+OUTREACH HOOKS:
+[3 specific, personalized cold email hooks based on the gaps found - things that would get this coach's attention because they address real problems on their site. Write these as actual email opening lines.]
+
+OVERALL SCORE:
+[Rate the site X/10 with a one-line justification]"""
+
+    try:
+        client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+        message = client.messages.create(
+            model="claude-sonnet-4-20250514",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        response_text = message.content[0].text
+
+        # Parse sections
+        sections = {
+            "ai_audit_summary": r"AUDIT SUMMARY:\s*\n(.*?)(?=\nPOSITIONING GAPS:|\Z)",
+            "ai_positioning_gaps": r"POSITIONING GAPS:\s*\n(.*?)(?=\nOUTREACH HOOKS:|\Z)",
+            "ai_outreach_hooks": r"OUTREACH HOOKS:\s*\n(.*?)(?=\nOVERALL SCORE:|\Z)",
+            "ai_overall_score": r"OVERALL SCORE:\s*\n(.*?)(?:\Z)",
+        }
+
+        for key, pattern in sections.items():
+            match = re.search(pattern, response_text, re.S)
+            if match:
+                data[key] = match.group(1).strip()
+
+        # Fallback: if parsing fails, just return the full response
+        if not any(data[k] for k in sections):
+            data["ai_audit_summary"] = response_text
+
+    except Exception as e:
+        data["ai_audit_summary"] = f"AI analysis failed: {str(e)}"
+
+    return data
+
+
+# =============================================================================
 # FIND SUBPAGES
 # =============================================================================
 
@@ -1479,6 +1778,17 @@ def scrape_website(url):
         intel["all_phones_found"] = crawl["crawl_all_phones"]
     if crawl["crawl_total_testimonials"] > intel.get("audience_testimonial_count", 0):
         intel["audience_testimonial_count"] = crawl["crawl_total_testimonials"]
+
+    # 8. Social media profile scraping
+    social = scrape_social_profiles(soup, html)
+    for k, v in social.items():
+        intel[f"social_{k}"] = v
+
+    # 9. AI-powered analysis (must run last — needs all other data)
+    if HAS_CLAUDE and ANTHROPIC_API_KEY:
+        ai = generate_ai_analysis(intel)
+        for k, v in ai.items():
+            intel[f"ai_{k}"] = v
 
     return intel
 
