@@ -1781,6 +1781,15 @@ def scrape_website(url):
 
     # 8. Social media profile scraping
     social = scrape_social_profiles(soup, html)
+    # Flatten nested social_profiles dict into individual keys
+    profiles = social.pop("social_profiles", {})
+    for platform, profile_data in profiles.items():
+        intel[f"social_{platform}_url"] = profile_data.get("url", "")
+        intel[f"social_{platform}_followers"] = profile_data.get("followers", "Not found")
+        if platform == "instagram":
+            intel[f"social_{platform}_bio"] = profile_data.get("bio", "")
+        if platform == "youtube":
+            intel[f"social_{platform}_subscribers"] = profile_data.get("followers", "Not found")
     for k, v in social.items():
         intel[f"social_{k}"] = v
 
