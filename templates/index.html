@@ -979,11 +979,13 @@
                 const section = document.createElement('div');
                 section.className = 'result-category';
                 section.innerHTML = `<h3>${catName}</h3>`;
+                let hasRows = false;
 
                 for (const [key, label] of Object.entries(catInfo.format)) {
                     let value = results[key];
-                    if (value === undefined || value === null) continue;
+                    if (value === undefined || value === null || value === '') continue;
 
+                    hasRows = true;
                     const row = document.createElement('div');
                     row.className = 'result-row';
 
@@ -1012,7 +1014,7 @@
                     section.appendChild(row);
                 }
 
-                grid.appendChild(section);
+                if (hasRows) grid.appendChild(section);
             }
         }
 

@@ -1547,14 +1547,14 @@ def scrape_social_profiles(soup, html):
 def generate_ai_analysis(intel):
     """Use Claude to generate a natural-language audit summary with outreach hooks."""
     data = {
-        "ai_audit_summary": "",
-        "ai_positioning_gaps": "",
-        "ai_outreach_hooks": "",
-        "ai_overall_score": "",
+        "audit_summary": "",
+        "positioning_gaps": "",
+        "outreach_hooks": "",
+        "overall_score": "",
     }
 
     if not HAS_CLAUDE or not ANTHROPIC_API_KEY:
-        data["ai_audit_summary"] = "Claude API key not configured (set ANTHROPIC_API_KEY env var)"
+        data["audit_summary"] = "Claude API key not configured (set ANTHROPIC_API_KEY env var)"
         return data
 
     # Build a structured summary of all intel for Claude
@@ -1590,8 +1590,8 @@ def generate_ai_analysis(intel):
     summary_parts.append(f"Site description: {intel.get('offer_offer_description', 'N/A')}")
     summary_parts.append(f"Pages crawled: {intel.get('crawl_pages_scraped', 'N/A')}")
     summary_parts.append(f"Total prices found: {intel.get('offer_price_points', 'N/A')}")
-    summary_parts.append(f"Social profiles: {intel.get('social_summary', 'N/A')}")
-    summary_parts.append(f"Total social followers: {intel.get('social_total_followers', 'N/A')}")
+    summary_parts.append(f"Social profiles: {intel.get('social_social_summary', 'N/A')}")
+    summary_parts.append(f"Total social followers: {intel.get('social_social_total_followers', 'N/A')}")
 
     site_data = "\n".join(summary_parts)
 
@@ -1625,10 +1625,10 @@ OVERALL SCORE:
 
         # Parse sections
         sections = {
-            "ai_audit_summary": r"AUDIT SUMMARY:\s*\n(.*?)(?=\nPOSITIONING GAPS:|\Z)",
-            "ai_positioning_gaps": r"POSITIONING GAPS:\s*\n(.*?)(?=\nOUTREACH HOOKS:|\Z)",
-            "ai_outreach_hooks": r"OUTREACH HOOKS:\s*\n(.*?)(?=\nOVERALL SCORE:|\Z)",
-            "ai_overall_score": r"OVERALL SCORE:\s*\n(.*?)(?:\Z)",
+            "audit_summary": r"AUDIT SUMMARY:\s*\n(.*?)(?=\nPOSITIONING GAPS:|\Z)",
+            "positioning_gaps": r"POSITIONING GAPS:\s*\n(.*?)(?=\nOUTREACH HOOKS:|\Z)",
+            "outreach_hooks": r"OUTREACH HOOKS:\s*\n(.*?)(?=\nOVERALL SCORE:|\Z)",
+            "overall_score": r"OVERALL SCORE:\s*\n(.*?)(?:\Z)",
         }
 
         for key, pattern in sections.items():
@@ -1638,10 +1638,10 @@ OVERALL SCORE:
 
         # Fallback: if parsing fails, just return the full response
         if not any(data[k] for k in sections):
-            data["ai_audit_summary"] = response_text
+            data["audit_summary"] = response_text
 
     except Exception as e:
-        data["ai_audit_summary"] = f"AI analysis failed: {str(e)}"
+        data["audit_summary"] = f"AI analysis failed: {str(e)}"
 
     return data
 
