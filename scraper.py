@@ -10,6 +10,7 @@ Scrapes websites against a 6-category checklist:
 """
 
 import json
+import os
 import re
 import sys
 import time
@@ -21,6 +22,12 @@ import pandas as pd
 import requests
 from bs4 import BeautifulSoup
 
+try:
+    from playwright.sync_api import sync_playwright
+    HAS_PLAYWRIGHT = True
+except ImportError:
+    HAS_PLAYWRIGHT = False
+
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                   "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -30,7 +37,10 @@ HEADERS = {
 }
 
 TIMEOUT = 15
-MAX_WORKERS = 5
+MAX_WORKERS = 3  # Lower for headless browser to avoid resource issues
+
+PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
+PAGESPEED_API_KEY = os.environ.get("PAGESPEED_API_KEY", "")
 
 BOOKING_TOOLS = {
     "Calendly": [r"calendly\.com"],
@@ -47,8 +57,8 @@ BOOKING_TOOLS = {
 }
 
 
-def fetch_page(url, timeout=TIMEOUT):
-    """Fetch a page and return (response, soup) or (None, None) on failure."""
+def fetch_page_simple(url, timeout=TIMEOUT):
+    """Fetch a page with requests (no JS). Returns (response, soup) or (None, None)."""
     try:
         resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
         resp.raise_for_status()
@@ -56,6 +66,182 @@ def fetch_page(url, timeout=TIMEOUT):
         return resp, soup
     except Exception:
         return None, None
+
+
+class BrowserResult:
+    """Mimics requests.Response for compatibility."""
+    def __init__(self, url, content, status_code, elapsed_seconds, headers=None):
+        self.url = url
+        self.text = content
+        self.content = content.encode("utf-8")
+        self.status_code = status_code
+        self.elapsed = type("Elapsed", (), {"total_seconds": lambda self: elapsed_seconds})()
+        self.headers = headers or {}
+
+
+def fetch_page_browser(url, timeout=30000):
+    """Fetch a page with headless Chromium (renders JS). Returns (response, soup) or (None, None)."""
+    if not HAS_PLAYWRIGHT:
+        return fetch_page_simple(url)
+
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context(
+                viewport={"width": 390, "height": 844},  # Mobile viewport
+                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            )
+            page = context.new_page()
+
+            start = time.time()
+            resp = page.goto(url, wait_until="networkidle", timeout=timeout)
+            # Wait a bit more for lazy-loaded content
+            page.wait_for_timeout(2000)
+            elapsed = time.time() - start
+
+            content = page.content()
+            final_url = page.url
+            status = resp.status if resp else 200
+            headers = {}
+            if resp:
+                headers = {h["name"]: h["value"] for h in resp.headers_array()} if hasattr(resp, "headers_array") else {}
+
+            # Check for mobile CTA visibility
+            mobile_cta_visible = False
+            try:
+                cta_el = page.query_selector('a[href*="book"], a[href*="schedule"], a[href*="calendly"], a[href*="call"], button:has-text("Book"), button:has-text("Schedule"), button:has-text("Get Started")')
+                if cta_el and cta_el.is_visible():
+                    box = cta_el.bounding_box()
+                    if box and box["y"] < 844:  # Within mobile viewport
+                        mobile_cta_visible = True
+            except Exception:
+                pass
+
+            browser.close()
+
+            result = BrowserResult(final_url, content, status, elapsed, headers)
+            result.mobile_cta_visible = mobile_cta_visible
+            result.mobile_load_time = round(elapsed, 2)
+
+            soup = BeautifulSoup(content, "html.parser")
+            return result, soup
+    except Exception as e:
+        # Fallback to simple fetch
+        return fetch_page_simple(url)
+
+
+def fetch_page(url, timeout=TIMEOUT):
+    """Fetch a page — uses headless browser for main page, requests for subpages."""
+    return fetch_page_simple(url, timeout)
+
+
+def fetch_homepage(url):
+    """Fetch homepage with headless browser for full JS rendering."""
+    return fetch_page_browser(url)
+
+
+# =============================================================================
+# GOOGLE PAGESPEED INSIGHTS
+# =============================================================================
+
+def get_pagespeed_insights(url):
+    """Get real Lighthouse scores from Google PageSpeed Insights API (free, no key needed)."""
+    data = {
+        "pagespeed_score_performance": None,
+        "pagespeed_score_accessibility": None,
+        "pagespeed_score_seo": None,
+        "pagespeed_score_best_practices": None,
+        "pagespeed_lcp_seconds": None,
+        "pagespeed_fid_ms": None,
+        "pagespeed_cls": None,
+        "pagespeed_fcp_seconds": None,
+        "pagespeed_speed_index": None,
+        "pagespeed_tbt_ms": None,
+        "pagespeed_opportunities": [],
+    }
+
+    try:
+        # Run for mobile strategy
+        params = {
+            "url": url,
+            "strategy": "mobile",
+            "category": ["performance", "accessibility", "seo", "best-practices"],
+        }
+        if PAGESPEED_API_KEY:
+            params["key"] = PAGESPEED_API_KEY
+        resp = requests.get(PAGESPEED_API_URL, params=params, timeout=60)
+        if resp.status_code != 200:
+            return data
+
+        result = resp.json()
+        lighthouse = result.get("lighthouseResult", {})
+        categories = lighthouse.get("categories", {})
+        audits = lighthouse.get("audits", {})
+
+        # Scores (0-100)
+        for cat_key, field_key in [
+            ("performance", "pagespeed_score_performance"),
+            ("accessibility", "pagespeed_score_accessibility"),
+            ("seo", "pagespeed_score_seo"),
+            ("best-practices", "pagespeed_score_best_practices"),
+        ]:
+            cat = categories.get(cat_key, {})
+            if cat.get("score") is not None:
+                data[field_key] = round(cat["score"] * 100)
+
+        # Core Web Vitals
+        if "largest-contentful-paint" in audits:
+            val = audits["largest-contentful-paint"].get("numericValue")
+            if val is not None:
+                data["pagespeed_lcp_seconds"] = round(val / 1000, 2)
+
+        if "max-potential-fid" in audits:
+            val = audits["max-potential-fid"].get("numericValue")
+            if val is not None:
+                data["pagespeed_fid_ms"] = round(val)
+
+        if "cumulative-layout-shift" in audits:
+            val = audits["cumulative-layout-shift"].get("numericValue")
+            if val is not None:
+                data["pagespeed_cls"] = round(val, 3)
+
+        if "first-contentful-paint" in audits:
+            val = audits["first-contentful-paint"].get("numericValue")
+            if val is not None:
+                data["pagespeed_fcp_seconds"] = round(val / 1000, 2)
+
+        if "speed-index" in audits:
+            val = audits["speed-index"].get("numericValue")
+            if val is not None:
+                data["pagespeed_speed_index"] = round(val / 1000, 2)
+
+        if "total-blocking-time" in audits:
+            val = audits["total-blocking-time"].get("numericValue")
+            if val is not None:
+                data["pagespeed_tbt_ms"] = round(val)
+
+        # Top opportunities for improvement
+        for audit_key, audit_data in audits.items():
+            if (audit_data.get("score") is not None
+                    and audit_data["score"] < 0.9
+                    and audit_data.get("details", {}).get("type") == "opportunity"):
+                savings = audit_data.get("details", {}).get("overallSavingsMs", 0)
+                if savings > 100:
+                    data["pagespeed_opportunities"].append({
+                        "issue": audit_data.get("title", audit_key),
+                        "savings_ms": round(savings),
+                    })
+
+        data["pagespeed_opportunities"] = sorted(
+            data["pagespeed_opportunities"],
+            key=lambda x: x["savings_ms"],
+            reverse=True,
+        )[:5]
+
+    except Exception:
+        pass
+
+    return data
 
 
 def normalize_url(url):
@@ -976,42 +1162,56 @@ def find_subpages(soup, base_url):
 # =============================================================================
 
 def scrape_website(url):
-    """Scrape a website against the full 6-category checklist."""
+    """Scrape a website against the full checklist using headless browser + PageSpeed."""
     url = normalize_url(url)
     if not url:
         return {"scrape_status": "no_url"}
 
     intel = {"website_url": url}
 
-    # Fetch homepage
-    resp, soup = fetch_page(url)
+    # Fetch homepage with headless browser (renders JS, measures mobile)
+    resp, soup = fetch_homepage(url)
     if not soup:
         intel["scrape_status"] = "failed"
         return intel
 
     intel["scrape_status"] = "success"
     intel["final_url"] = resp.url
+    intel["rendered_with"] = "headless_browser" if HAS_PLAYWRIGHT else "requests"
     html = str(soup)
     text = soup.get_text(separator=" ", strip=True)
     links = get_all_links(soup, url)
     subpages = find_subpages(soup, url)
     intel["subpages_found"] = list(subpages.keys())
 
+    # Browser-specific data
+    if hasattr(resp, "mobile_cta_visible"):
+        intel["mobile_cta_visible_above_fold"] = resp.mobile_cta_visible
+        intel["mobile_load_time_seconds"] = resp.mobile_load_time
+
     # Run all checklist categories
     # 1. Booking infrastructure
     booking = analyze_booking(soup, html, links, url)
     for k, v in booking.items():
         intel[f"booking_{k}"] = v
+    # Override with browser-measured CTA visibility
+    if hasattr(resp, "mobile_cta_visible"):
+        intel["booking_booking_cta_above_fold"] = resp.mobile_cta_visible
 
     # 1b. Paid ads detection (Gap 1)
     ads = analyze_paid_ads(soup, html)
     for k, v in ads.items():
         intel[f"ads_{k}"] = v
 
-    # 2. Site performance
+    # 2. Site performance (basic from response)
     perf = analyze_performance(resp, soup, url)
     for k, v in perf.items():
         intel[f"perf_{k}"] = v
+
+    # 2b. Google PageSpeed Insights (real Lighthouse scores)
+    pagespeed = get_pagespeed_insights(url)
+    for k, v in pagespeed.items():
+        intel[k] = v
 
     # 3. Offer details (enhanced with Gap 3)
     offer = analyze_offer(soup, text, html, subpages, url)
@@ -1022,7 +1222,6 @@ def scrape_website(url):
     coach = analyze_solo_vs_multi(soup, text, html, subpages, url)
     for k, v in coach.items():
         intel[f"team_{k}"] = v
-    # Override the old solo_or_multi_coach with enhanced version
     intel["offer_solo_or_multi_coach"] = coach["solo_or_multi_coach"]
 
     # 4. Audience signals

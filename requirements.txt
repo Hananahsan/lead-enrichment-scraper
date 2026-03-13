@@ -4,3 +4,4 @@ pandas
 tldextract
 flask
 gunicorn
+playwright
