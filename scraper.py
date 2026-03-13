@@ -1,15 +1,21 @@
 """
-Apollo Lead Enrichment Scraper
-Reads a CSV of leads, scrapes their company websites, and outputs enriched data.
+Apollo Lead Enrichment Scraper — Coaching Site Audit
+Scrapes websites against a 6-category checklist:
+  1. Booking infrastructure
+  2. Site performance
+  3. Offer details
+  4. Audience signals
+  5. Timing/recency signals
+  6. Technical gaps
 """
 
-import csv
 import json
 import re
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urljoin, urlparse
+from datetime import datetime
 
 import pandas as pd
 import requests
@@ -26,6 +32,20 @@ HEADERS = {
 TIMEOUT = 15
 MAX_WORKERS = 5
 
+BOOKING_TOOLS = {
+    "Calendly": [r"calendly\.com"],
+    "Acuity": [r"acuityscheduling\.com", r"squareup\.com/appointments"],
+    "Cal.com": [r"cal\.com"],
+    "Typeform": [r"typeform\.com"],
+    "HubSpot Meetings": [r"meetings\.hubspot\.com"],
+    "Savvycal": [r"savvycal\.com"],
+    "TidyCal": [r"tidycal\.com"],
+    "OnceHub": [r"oncehub\.com", r"scheduleonce\.com"],
+    "Dubsado": [r"dubsado\.com"],
+    "Book Like A Boss": [r"booklikeaboss\.com"],
+    "YouCanBookMe": [r"youcanbook\.me"],
+}
+
 
 def fetch_page(url, timeout=TIMEOUT):
     """Fetch a page and return (response, soup) or (None, None) on failure."""
@@ -39,7 +59,6 @@ def fetch_page(url, timeout=TIMEOUT):
 
 
 def normalize_url(url):
-    """Ensure URL has a scheme."""
     if not url:
         return None
     url = url.strip()
@@ -48,171 +67,670 @@ def normalize_url(url):
     return url
 
 
-def extract_meta(soup):
-    """Extract meta tags info."""
-    meta = {}
-    # Title
-    if soup.title and soup.title.string:
-        meta["page_title"] = soup.title.string.strip()
-
-    # Meta description
-    desc_tag = soup.find("meta", attrs={"name": "description"})
-    if desc_tag and desc_tag.get("content"):
-        meta["meta_description"] = desc_tag["content"].strip()
-
-    # Meta keywords
-    kw_tag = soup.find("meta", attrs={"name": "keywords"})
-    if kw_tag and kw_tag.get("content"):
-        meta["meta_keywords"] = kw_tag["content"].strip()
-
-    # OG tags
-    for prop in ["og:title", "og:description", "og:image", "og:type", "og:site_name"]:
-        tag = soup.find("meta", attrs={"property": prop})
-        if tag and tag.get("content"):
-            meta[prop.replace(":", "_")] = tag["content"].strip()
-
-    return meta
+def get_all_links(soup, base_url):
+    """Get all same-domain links from a page."""
+    links = []
+    base_parsed = urlparse(base_url)
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        full = urljoin(base_url, href)
+        parsed = urlparse(full)
+        if parsed.netloc == base_parsed.netloc or not parsed.netloc:
+            links.append({
+                "url": full,
+                "href": href,
+                "text": a.get_text(strip=True),
+                "element": a,
+            })
+    return links
 
 
-def extract_social_links(soup, base_url):
-    """Extract social media profile URLs."""
-    social_patterns = {
-        "linkedin": r"linkedin\.com",
-        "twitter": r"(twitter\.com|x\.com)",
-        "facebook": r"facebook\.com",
-        "instagram": r"instagram\.com",
-        "youtube": r"youtube\.com",
-        "github": r"github\.com",
-        "crunchbase": r"crunchbase\.com",
-    }
-    socials = {}
-    for a_tag in soup.find_all("a", href=True):
-        href = a_tag["href"]
-        for platform, pattern in social_patterns.items():
-            if platform not in socials and re.search(pattern, href, re.I):
-                socials[platform] = href
-    return socials
+# =============================================================================
+# 1. BOOKING INFRASTRUCTURE
+# =============================================================================
 
-
-def extract_emails(soup, text):
-    """Extract email addresses from page."""
-    emails = set()
-    # From mailto links
-    for a_tag in soup.find_all("a", href=True):
-        if a_tag["href"].startswith("mailto:"):
-            email = a_tag["href"].replace("mailto:", "").split("?")[0].strip()
-            if email:
-                emails.add(email)
-    # From page text
-    email_pattern = r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
-    emails.update(re.findall(email_pattern, text))
-    # Filter out common false positives
-    emails = {e for e in emails if not e.endswith((".png", ".jpg", ".gif", ".svg"))}
-    return list(emails)
-
-
-def extract_phone_numbers(text):
-    """Extract phone numbers from page text."""
-    patterns = [
-        r"\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}",
-        r"\+\d{1,3}[-.\s]?\d{1,4}[-.\s]?\d{1,4}[-.\s]?\d{1,9}",
-    ]
-    phones = set()
-    for pattern in patterns:
-        matches = re.findall(pattern, text)
-        for m in matches:
-            cleaned = re.sub(r"[^\d+]", "", m)
-            if 7 <= len(cleaned.replace("+", "")) <= 15:
-                phones.add(m.strip())
-    return list(phones)
-
-
-def extract_tech_stack(soup, resp_headers):
-    """Detect technologies from HTML and headers."""
-    tech = []
-    html = str(soup)
-
-    checks = {
-        "Google Analytics": [r"google-analytics\.com", r"gtag\(", r"UA-\d+"],
-        "Google Tag Manager": [r"googletagmanager\.com"],
-        "Facebook Pixel": [r"connect\.facebook\.net", r"fbq\("],
-        "HubSpot": [r"js\.hs-scripts\.com", r"hs-analytics", r"hubspot"],
-        "Salesforce": [r"salesforce\.com", r"pardot\.com"],
-        "Intercom": [r"intercom\.io", r"widget\.intercom"],
-        "Drift": [r"drift\.com", r"js\.driftt\.com"],
-        "Zendesk": [r"zendesk\.com", r"zdassets\.com"],
-        "Hotjar": [r"hotjar\.com", r"static\.hotjar"],
-        "Segment": [r"segment\.com/analytics", r"cdn\.segment\.com"],
-        "Mixpanel": [r"mixpanel\.com"],
-        "Amplitude": [r"amplitude\.com"],
-        "Stripe": [r"js\.stripe\.com", r"stripe\.com"],
-        "WordPress": [r"wp-content", r"wp-includes"],
-        "Shopify": [r"cdn\.shopify\.com", r"shopify\.com"],
-        "React": [r"react\.production", r"__NEXT_DATA__", r"_next/"],
-        "Next.js": [r"__NEXT_DATA__", r"_next/static"],
-        "Vue.js": [r"vue\.js", r"vue\.min\.js", r"__vue"],
-        "Angular": [r"ng-version", r"angular\.js"],
-        "jQuery": [r"jquery\.min\.js", r"jquery-\d"],
-        "Bootstrap": [r"bootstrap\.min\.(css|js)"],
-        "Tailwind CSS": [r"tailwindcss", r"tailwind\.css"],
-        "Cloudflare": [r"cloudflare"],
-        "AWS": [r"amazonaws\.com"],
-        "Vercel": [r"vercel"],
-        "Netlify": [r"netlify"],
+def analyze_booking(soup, html, links, base_url):
+    """Checklist category 1: Booking infrastructure."""
+    data = {
+        "booking_tool": "None detected",
+        "booking_tool_branded": "",
+        "booking_links": [],
+        "booking_cta_above_fold": False,
+        "pre_call_sequence_visible": False,
+        "clicks_to_book": "Unknown",
+        "booking_cta_works": "Unknown",
+        "has_contact_form": False,
     }
 
-    for tech_name, patterns in checks.items():
+    # Detect booking tool
+    for tool, patterns in BOOKING_TOOLS.items():
         for pattern in patterns:
             if re.search(pattern, html, re.I):
-                tech.append(tech_name)
+                data["booking_tool"] = tool
+                break
+        if data["booking_tool"] != "None detected":
+            break
+
+    # Check for generic contact form
+    forms = soup.find_all("form")
+    for form in forms:
+        form_html = str(form).lower()
+        if any(kw in form_html for kw in ["contact", "message", "inquiry", "get in touch", "name", "email"]):
+            data["has_contact_form"] = True
+            if data["booking_tool"] == "None detected":
+                data["booking_tool"] = "Contact form"
+            break
+
+    # Find booking/CTA links
+    cta_keywords = re.compile(
+        r"book|schedule|call|consult|discovery|strategy.?session|free.?call|"
+        r"get.?started|apply|work.?with|let.?s.?talk|chat.?with|speak.?with",
+        re.I,
+    )
+    booking_links = []
+    for link in links:
+        text = link["text"]
+        href = link["href"]
+        if cta_keywords.search(text) or cta_keywords.search(href):
+            booking_links.append({"text": text[:80], "url": link["url"]})
+
+    # Also check buttons
+    for btn in soup.find_all(["button", "a"], class_=True):
+        classes = " ".join(btn.get("class", []))
+        text = btn.get_text(strip=True)
+        if cta_keywords.search(text) or any(kw in classes.lower() for kw in ["cta", "btn-primary", "book", "schedule"]):
+            href = btn.get("href", "")
+            if href and href not in [b["url"] for b in booking_links]:
+                booking_links.append({"text": text[:80], "url": urljoin(base_url, href)})
+
+    data["booking_links"] = booking_links[:10]
+
+    # Check if CTA is likely above the fold (in first 20 elements)
+    first_elements = soup.find_all(["a", "button"], limit=30)
+    for el in first_elements:
+        text = el.get_text(strip=True)
+        if cta_keywords.search(text):
+            data["booking_cta_above_fold"] = True
+            break
+
+    # Check for branded vs generic booking
+    if data["booking_tool"] not in ("None detected", "Contact form"):
+        # Look for custom domain or embedded booking
+        tool_lower = data["booking_tool"].lower()
+        embedded = soup.find("iframe", src=re.compile(tool_lower, re.I))
+        if embedded:
+            data["booking_tool_branded"] = "Embedded on site"
+        else:
+            data["booking_tool_branded"] = "External link (not embedded)"
+
+    # Pre-call sequence indicators
+    precall_keywords = re.compile(
+        r"confirmation|what.?to.?expect|before.?your.?call|prepare.?for|"
+        r"reminder|welcome.?video|pre.?call|intake.?form",
+        re.I,
+    )
+    if precall_keywords.search(html):
+        data["pre_call_sequence_visible"] = True
+
+    # Clicks to book estimate
+    if booking_links:
+        # Check if any booking link is on homepage directly
+        for bl in booking_links:
+            for tool_patterns in BOOKING_TOOLS.values():
+                for pat in tool_patterns:
+                    if re.search(pat, bl["url"], re.I):
+                        data["clicks_to_book"] = "1 (direct link on homepage)"
+                        break
+        if data["clicks_to_book"] == "Unknown":
+            data["clicks_to_book"] = "1-2 (CTA found on homepage)"
+    else:
+        data["clicks_to_book"] = "3+ (no obvious booking CTA on homepage)"
+
+    # Verify booking links work
+    if booking_links:
+        test_url = booking_links[0]["url"]
+        try:
+            r = requests.head(test_url, headers=HEADERS, timeout=10, allow_redirects=True)
+            if r.status_code < 400:
+                data["booking_cta_works"] = "Yes"
+            else:
+                data["booking_cta_works"] = f"Broken (HTTP {r.status_code})"
+        except Exception:
+            data["booking_cta_works"] = "Broken (connection failed)"
+
+    return data
+
+
+# =============================================================================
+# 2. SITE PERFORMANCE
+# =============================================================================
+
+def analyze_performance(resp, soup, url):
+    """Checklist category 2: Site performance."""
+    data = {
+        "load_time_seconds": None,
+        "mobile_viewport_set": False,
+        "page_size_kb": None,
+        "image_count": 0,
+        "large_images_detected": False,
+        "mobile_layout_issues": [],
+    }
+
+    # Load time (approximate from response time)
+    data["load_time_seconds"] = round(resp.elapsed.total_seconds(), 2)
+
+    # Page size
+    content_length = len(resp.content)
+    data["page_size_kb"] = round(content_length / 1024, 1)
+
+    # Mobile viewport
+    viewport = soup.find("meta", attrs={"name": "viewport"})
+    data["mobile_viewport_set"] = viewport is not None
+
+    # Image analysis
+    images = soup.find_all("img")
+    data["image_count"] = len(images)
+
+    # Check for responsive images
+    non_responsive = 0
+    for img in images:
+        if not img.get("srcset") and not img.get("loading"):
+            non_responsive += 1
+    if non_responsive > 5:
+        data["mobile_layout_issues"].append(f"{non_responsive} images without lazy loading or srcset")
+
+    # Fixed width elements (mobile issue)
+    html = str(soup)
+    fixed_width = len(re.findall(r'width:\s*\d{4,}px', html))
+    if fixed_width:
+        data["mobile_layout_issues"].append(f"{fixed_width} elements with fixed width >999px")
+
+    # Horizontal scroll risk
+    if re.search(r'overflow-x:\s*hidden', html):
+        data["mobile_layout_issues"].append("overflow-x:hidden used (may hide content on mobile)")
+
+    if not data["mobile_layout_issues"]:
+        data["mobile_layout_issues"] = ["No obvious issues detected"]
+
+    return data
+
+
+# =============================================================================
+# 3. OFFER DETAILS
+# =============================================================================
+
+def analyze_offer(soup, text, html, subpages):
+    """Checklist category 3: Offer details."""
+    data = {
+        "offer_type": [],
+        "price_points": [],
+        "price_range": "",
+        "target_client": [],
+        "solo_or_multi_coach": "Unknown",
+        "offer_description": "",
+    }
+
+    # Detect offer types
+    offer_patterns = {
+        "1-on-1 Coaching": r"1.?on.?1|one.?on.?one|individual.?coaching|private.?coaching|personal.?coaching",
+        "Group Program": r"group.?program|group.?coaching|cohort|group.?session",
+        "Mastermind": r"mastermind",
+        "Course": r"online.?course|self.?paced|video.?course|digital.?course|training.?program",
+        "Course + Coaching Hybrid": r"course.*coaching|coaching.*course|program.*support|program.*calls",
+        "Workshop": r"workshop|bootcamp|intensive|immersive",
+        "Membership": r"membership|community|monthly.?access|inner.?circle",
+        "Retreat": r"retreat",
+        "Corporate Training": r"corporate.?training|team.?training|leadership.?development|organizational",
+        "Consulting": r"consulting|advisory|fractional",
+        "Speaking": r"keynote|speaking|book.?me.?to.?speak",
+    }
+
+    full_text = text.lower()
+    for offer, pattern in offer_patterns.items():
+        if re.search(pattern, full_text):
+            data["offer_type"].append(offer)
+
+    if not data["offer_type"]:
+        data["offer_type"] = ["Not clearly stated"]
+
+    # Price detection
+    prices = re.findall(r"\$[\d,]+(?:\.\d{2})?(?:\s*[/-]\s*\w+)?", text)
+    if prices:
+        data["price_points"] = list(set(prices))[:10]
+        # Try to determine range
+        amounts = []
+        for p in prices:
+            num = re.search(r"[\d,]+", p)
+            if num:
+                amounts.append(int(num.group().replace(",", "")))
+        if amounts:
+            max_price = max(amounts)
+            if max_price >= 2000:
+                data["price_range"] = "High-ticket ($2K+)"
+            elif max_price >= 500:
+                data["price_range"] = "Mid-range ($500-$2K)"
+            else:
+                data["price_range"] = "Low-ticket (under $500)"
+    else:
+        data["price_range"] = "Not visible on site"
+
+    # Target client detection
+    audience_patterns = {
+        "Executives": r"executive|c-suite|ceo|cfo|cto|senior.?leader",
+        "Entrepreneurs": r"entrepreneur|founder|business.?owner|startup|solopreneur",
+        "Women Leaders": r"women.?leader|female.?founder|women.?in|her\b.*business|she\b.*lead",
+        "Corporate Teams": r"corporate|team|organization|enterprise|company",
+        "Career Professionals": r"career|professional|job|mid.?career|transition",
+        "Coaches/Consultants": r"coach(?:es|ing)?.*coach|consultant.*grow|help.?coaches|coach.?training",
+        "Health/Wellness": r"health|wellness|fitness|nutrition|mindset|burnout",
+        "Sales Professionals": r"sales.?team|sales.?leader|revenue|quota",
+        "Creatives": r"creative|artist|designer|writer|content.?creator",
+        "Parents": r"parent|mom|dad|family",
+    }
+
+    for audience, pattern in audience_patterns.items():
+        if re.search(pattern, full_text):
+            data["target_client"].append(audience)
+
+    if not data["target_client"]:
+        data["target_client"] = ["Not clearly defined"]
+
+    # Solo vs multi-coach
+    team_indicators = re.compile(
+        r"our.?team|our.?coaches|meet.?the.?team|certified.?coach(?:es)|"
+        r"team.?of|coach.?roster|faculty|facilitator",
+        re.I,
+    )
+    solo_indicators = re.compile(
+        r"about.?me\b|my.?story|i.?help|i.?work.?with|my.?approach|"
+        r"hi.?i.?m\b|i.?believe",
+        re.I,
+    )
+
+    team_match = team_indicators.search(text)
+    solo_match = solo_indicators.search(text)
+
+    if team_match and not solo_match:
+        data["solo_or_multi_coach"] = "Multi-coach platform"
+    elif solo_match and not team_match:
+        data["solo_or_multi_coach"] = "Solo coach"
+    elif team_match and solo_match:
+        data["solo_or_multi_coach"] = "Solo coach with team/support"
+    else:
+        data["solo_or_multi_coach"] = "Unknown"
+
+    # Offer description from meta or first long paragraph
+    meta_desc = soup.find("meta", attrs={"name": "description"})
+    if meta_desc and meta_desc.get("content"):
+        data["offer_description"] = meta_desc["content"].strip()[:300]
+    else:
+        paragraphs = soup.find_all("p")
+        for p in paragraphs:
+            ptext = p.get_text(strip=True)
+            if len(ptext) > 80:
+                data["offer_description"] = ptext[:300]
                 break
 
-    # Check response headers
-    server = resp_headers.get("Server", "")
-    if server:
-        tech.append(f"Server: {server}")
-    powered_by = resp_headers.get("X-Powered-By", "")
-    if powered_by:
-        tech.append(f"Powered-By: {powered_by}")
-
-    return tech
+    return data
 
 
-def extract_company_info(soup, text):
-    """Extract company description and other info from common page sections."""
-    info = {}
+# =============================================================================
+# 4. AUDIENCE SIGNALS
+# =============================================================================
 
-    # Try to find "about" or "company" text in first few paragraphs
-    paragraphs = soup.find_all("p")
-    long_paragraphs = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 80]
-    if long_paragraphs:
-        info["site_description"] = long_paragraphs[0][:500]
+def analyze_audience(soup, text, html, links, subpages):
+    """Checklist category 4: Audience signals."""
+    data = {
+        "serves_multiple_audiences": False,
+        "audience_segments": [],
+        "has_active_blog": False,
+        "latest_blog_date": "",
+        "has_podcast": False,
+        "has_youtube": False,
+        "social_proof_testimonials": False,
+        "testimonial_count": 0,
+        "social_proof_logos": False,
+        "social_proof_media_mentions": False,
+        "social_proof_details": [],
+    }
 
-    # Copyright notice (often has company legal name and year)
-    copyright_pattern = r"(?:©|\(c\)|copyright)\s*(\d{4})?\s*([^.|\n]{2,80})"
-    match = re.search(copyright_pattern, text, re.I)
-    if match:
-        info["copyright"] = match.group(0).strip()
+    # Multiple audience detection
+    audience_pages = []
+    for link in links:
+        lt = link["text"].lower()
+        href = link["href"].lower()
+        if re.search(r"for.?(executive|entrepreneur|individual|corporate|team|women|leader|coach)", lt + " " + href, re.I):
+            audience_pages.append(link["text"][:60])
 
-    # Address patterns
-    address_pattern = r"\d{1,5}\s[\w\s]{1,30}(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|way|court|ct|place|pl)[\w\s,]{0,50}\d{5}"
-    addr_match = re.search(address_pattern, text, re.I)
-    if addr_match:
-        info["address"] = addr_match.group(0).strip()
+    if len(audience_pages) >= 2:
+        data["serves_multiple_audiences"] = True
+        data["audience_segments"] = audience_pages[:5]
 
-    return info
+    # Also check if text mentions serving different groups
+    multi_pattern = re.compile(
+        r"(for.?individuals.?and.?(?:teams|corporate|organizations))|"
+        r"(whether.?you.?re.?a.?.*or.?a)|"
+        r"(for.?both.?.*and)",
+        re.I,
+    )
+    if multi_pattern.search(text):
+        data["serves_multiple_audiences"] = True
 
+    # Blog detection
+    blog_subpage = subpages.get("blog")
+    if blog_subpage:
+        _, blog_soup = fetch_page(blog_subpage)
+        if blog_soup:
+            blog_text = blog_soup.get_text(separator=" ", strip=True)
+            # Look for dates
+            date_patterns = [
+                r"(January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2},?\s+\d{4}",
+                r"\d{1,2}[/-]\d{1,2}[/-]\d{2,4}",
+                r"\d{4}-\d{2}-\d{2}",
+            ]
+            dates_found = []
+            for dp in date_patterns:
+                dates_found.extend(re.findall(dp, blog_text))
+
+            if dates_found:
+                data["has_active_blog"] = True
+                data["latest_blog_date"] = dates_found[0]
+            else:
+                # Has blog page but can't find dates
+                data["has_active_blog"] = True
+                data["latest_blog_date"] = "Dates not found"
+    else:
+        # Check homepage for blog links
+        for link in links:
+            if re.search(r"blog|article|post|insight|resource", link["href"], re.I):
+                data["has_active_blog"] = True
+                break
+
+    # Podcast detection
+    podcast_patterns = r"podcast|episode|listen.?now|apple.?podcast|spotify.*podcast|anchor\.fm|buzzsprout"
+    if re.search(podcast_patterns, html, re.I):
+        data["has_podcast"] = True
+
+    # YouTube detection
+    if re.search(r"youtube\.com|youtu\.be", html, re.I):
+        data["has_youtube"] = True
+
+    # Testimonials
+    testimonial_patterns = re.compile(
+        r"testimonial|review|what.?(client|people|they).?say|success.?stor|"
+        r"client.?result|transformation|case.?stud",
+        re.I,
+    )
+
+    # Look for testimonial sections
+    if testimonial_patterns.search(html):
+        data["social_proof_testimonials"] = True
+
+    # Count blockquotes and testimonial-like elements
+    blockquotes = soup.find_all("blockquote")
+    testimonial_divs = soup.find_all(["div", "section"], class_=re.compile(r"testimonial|review|quote", re.I))
+    data["testimonial_count"] = max(len(blockquotes), len(testimonial_divs))
+
+    # Look for quote marks as testimonial indicator
+    quote_elements = soup.find_all(string=re.compile(r'^["\u201c].*["\u201d]$'))
+    if quote_elements:
+        data["testimonial_count"] = max(data["testimonial_count"], len(quote_elements))
+        data["social_proof_testimonials"] = True
+
+    # Logo bar / "as seen in"
+    logo_patterns = re.compile(
+        r"as.?seen.?in|featured.?in|trusted.?by|as.?featured|partner|client.?logo|"
+        r"worked.?with|companies.?we|brands.?we",
+        re.I,
+    )
+    if logo_patterns.search(html):
+        data["social_proof_logos"] = True
+        data["social_proof_details"].append("Logo bar / 'featured in' section found")
+
+    # Media mentions
+    media_patterns = re.compile(
+        r"forbes|inc\.com|entrepreneur\.com|fast.?company|harvard.?business|"
+        r"wall.?street|new.?york.?times|cnn|bbc|ted.?talk|tedx|huffington|"
+        r"business.?insider|usa.?today|nbc|abc|cbs|fox.?news",
+        re.I,
+    )
+    if media_patterns.search(html):
+        data["social_proof_media_mentions"] = True
+        # Find which ones
+        for media in ["Forbes", "Inc", "Entrepreneur", "Fast Company", "Harvard Business Review",
+                       "Wall Street Journal", "NYT", "CNN", "BBC", "TEDx", "HuffPost",
+                       "Business Insider", "USA Today"]:
+            if re.search(re.escape(media), html, re.I):
+                data["social_proof_details"].append(f"Mentioned: {media}")
+
+    return data
+
+
+# =============================================================================
+# 5. TIMING / RECENCY SIGNALS
+# =============================================================================
+
+def analyze_timing(soup, text, html):
+    """Checklist category 5: Timing/recency signals."""
+    data = {
+        "copyright_year": "",
+        "site_looks_recent": "Unknown",
+        "now_enrolling_banner": False,
+        "new_program_signals": [],
+        "recent_press_on_site": False,
+        "hiring_indicators": False,
+        "design_assessment": "",
+    }
+
+    current_year = datetime.now().year
+
+    # Copyright year
+    copyright_match = re.search(r"(?:©|\(c\)|copyright)\s*(\d{4})", text, re.I)
+    if copyright_match:
+        year = int(copyright_match.group(1))
+        data["copyright_year"] = str(year)
+        if year >= current_year - 1:
+            data["site_looks_recent"] = "Yes (copyright current)"
+        elif year >= current_year - 3:
+            data["site_looks_recent"] = "Possibly (copyright within 3 years)"
+        else:
+            data["site_looks_recent"] = f"Outdated (copyright {year})"
+    else:
+        data["copyright_year"] = "Not found"
+
+    # Enrolling / launch banners
+    enroll_patterns = re.compile(
+        r"now.?enrolling|doors.?open|enrollment.?open|join.?now|launching.?soon|"
+        r"new.?cohort|next.?cohort|applications.?open|waitlist|sign.?up.?now|"
+        r"limited.?spots|spots.?remaining|seats.?left|early.?bird",
+        re.I,
+    )
+    if enroll_patterns.search(text):
+        data["now_enrolling_banner"] = True
+        matches = enroll_patterns.findall(text)
+        data["new_program_signals"].extend(m.strip() for m in matches[:5])
+
+    # New program signals
+    new_patterns = re.compile(
+        r"new.?program|just.?launched|brand.?new|introducing|coming.?soon|"
+        r"beta|founding.?member|charter.?member|pilot.?program",
+        re.I,
+    )
+    if new_patterns.search(text):
+        matches = new_patterns.findall(text)
+        data["new_program_signals"].extend(m.strip() for m in matches[:5])
+
+    data["new_program_signals"] = list(set(data["new_program_signals"]))
+
+    # Recent press on site
+    recent_year_pattern = re.compile(rf"(?:20(?:2[3-9]|[3-9]\d)).*(?:podcast|interview|feature|article|press|media)", re.I)
+    if recent_year_pattern.search(text):
+        data["recent_press_on_site"] = True
+
+    # Hiring indicators
+    hiring_patterns = re.compile(
+        r"we.?re.?hiring|join.?our.?team|career|open.?position|job.?opening|"
+        r"apply.?to.?work|looking.?for.?a|now.?hiring|work.?with.?us",
+        re.I,
+    )
+    if hiring_patterns.search(text):
+        data["hiring_indicators"] = True
+
+    # Design assessment heuristics
+    design_signals = []
+    # Modern frameworks
+    if re.search(r"tailwind|_next/|webflow", html, re.I):
+        design_signals.append("modern framework detected")
+    # Old jQuery/bootstrap
+    if re.search(r"jquery-1\.|bootstrap-[23]", html, re.I):
+        design_signals.append("older framework version")
+    # Responsive design
+    if soup.find("meta", attrs={"name": "viewport"}):
+        design_signals.append("responsive")
+    # Animations/modern CSS
+    if re.search(r"animation|transform|transition|@keyframes|gsap|aos", html, re.I):
+        design_signals.append("uses animations")
+
+    if design_signals:
+        data["design_assessment"] = ", ".join(design_signals)
+
+    return data
+
+
+# =============================================================================
+# 6. TECHNICAL GAPS
+# =============================================================================
+
+def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
+    """Checklist category 6: Technical gaps (email hooks)."""
+    data = {
+        "broken_links": [],
+        "has_ssl": False,
+        "ssl_issues": "",
+        "outdated_footer_year": False,
+        "missing_favicon": False,
+        "placeholder_text_found": False,
+        "placeholder_details": [],
+        "conflicting_ctas": False,
+        "cta_count": 0,
+        "cta_list": [],
+        "booking_page_no_context": False,
+        "technical_issues_summary": [],
+    }
+
+    # SSL check
+    final_url = resp.url
+    data["has_ssl"] = final_url.startswith("https://")
+    if not data["has_ssl"]:
+        data["ssl_issues"] = "Site not using HTTPS"
+        data["technical_issues_summary"].append("Missing SSL/HTTPS")
+
+    # Check a sample of links for broken ones
+    checked = 0
+    for link in links[:20]:
+        url = link["url"]
+        if url.startswith("mailto:") or url.startswith("tel:") or url.startswith("#"):
+            continue
+        try:
+            r = requests.head(url, headers=HEADERS, timeout=8, allow_redirects=True)
+            if r.status_code >= 400:
+                data["broken_links"].append({"url": url, "text": link["text"][:50], "status": r.status_code})
+        except Exception:
+            data["broken_links"].append({"url": url, "text": link["text"][:50], "status": "timeout/error"})
+        checked += 1
+        if checked >= 10:
+            break
+
+    if data["broken_links"]:
+        data["technical_issues_summary"].append(f"{len(data['broken_links'])} broken link(s) found")
+
+    # Favicon
+    favicon = soup.find("link", rel=re.compile(r"icon", re.I))
+    if not favicon:
+        data["missing_favicon"] = True
+        data["technical_issues_summary"].append("Missing favicon")
+
+    # Outdated footer year
+    current_year = datetime.now().year
+    footer = soup.find("footer")
+    if footer:
+        footer_text = footer.get_text()
+        year_match = re.search(r"20\d{2}", footer_text)
+        if year_match:
+            year = int(year_match.group())
+            if year < current_year - 1:
+                data["outdated_footer_year"] = True
+                data["technical_issues_summary"].append(f"Outdated footer year ({year})")
+
+    # Placeholder text / lorem ipsum
+    placeholder_patterns = [
+        (r"lorem\s+ipsum", "Lorem ipsum placeholder text"),
+        (r"your.?(?:company|name|title).?here", "Placeholder: 'your name/company here'"),
+        (r"coming\s+soon", "Coming soon placeholder"),
+        (r"under\s+construction", "Under construction"),
+        (r"example\.com", "example.com reference"),
+        (r"insert\s+(?:text|image|content)", "Insert content placeholder"),
+    ]
+    for pattern, desc in placeholder_patterns:
+        if re.search(pattern, text, re.I):
+            data["placeholder_text_found"] = True
+            data["placeholder_details"].append(desc)
+            data["technical_issues_summary"].append(desc)
+
+    # Conflicting CTAs
+    cta_patterns = re.compile(
+        r"book|schedule|apply|enroll|sign.?up|get.?started|join|download|"
+        r"buy.?now|purchase|subscribe|register|contact|free.?call",
+        re.I,
+    )
+    ctas = set()
+    for el in soup.find_all(["a", "button"]):
+        el_text = el.get_text(strip=True)
+        if cta_patterns.search(el_text) and len(el_text) < 60:
+            ctas.add(el_text)
+
+    data["cta_count"] = len(ctas)
+    data["cta_list"] = list(ctas)[:15]
+    if len(ctas) >= 5:
+        data["conflicting_ctas"] = True
+        data["technical_issues_summary"].append(f"{len(ctas)} different CTAs competing for attention")
+
+    # Booking page context check
+    if booking_data.get("booking_links"):
+        first_booking = booking_data["booking_links"][0]["url"]
+        # Check if booking link goes to external tool with no context
+        for tool_patterns in BOOKING_TOOLS.values():
+            for pat in tool_patterns:
+                if re.search(pat, first_booking, re.I):
+                    # It's an external booking tool - check if there's any context page before it
+                    _, booking_soup = fetch_page(first_booking)
+                    if booking_soup:
+                        bt = booking_soup.get_text(strip=True)
+                        if len(bt) < 200:
+                            data["booking_page_no_context"] = True
+                            data["technical_issues_summary"].append("Booking page has no context about what the call is for")
+                    break
+
+    if not data["technical_issues_summary"]:
+        data["technical_issues_summary"] = ["No major technical issues found"]
+
+    return data
+
+
+# =============================================================================
+# FIND SUBPAGES
+# =============================================================================
 
 def find_subpages(soup, base_url):
-    """Find links to key subpages (about, pricing, careers, contact, blog)."""
     keywords = {
         "about": r"about|who-we-are|our-story|company",
-        "pricing": r"pricing|plans|packages",
-        "careers": r"careers|jobs|hiring|join-us|work-with-us",
+        "pricing": r"pricing|plans|packages|investment",
+        "services": r"services|programs|offerings|work-with-me|coaching",
+        "blog": r"blog|articles|insights|resources|posts",
+        "podcast": r"podcast|episodes|show",
         "contact": r"contact|get-in-touch|reach-us",
-        "blog": r"blog|news|insights|resources",
-        "products": r"products|services|solutions|features",
-        "team": r"team|people|leadership|our-team",
+        "testimonials": r"testimonials|results|success-stories|case-studies",
+        "team": r"team|about-us|our-coaches|facilitators",
     }
     found = {}
     for a_tag in soup.find_all("a", href=True):
@@ -224,56 +742,17 @@ def find_subpages(soup, base_url):
                     full_url = urljoin(base_url, a_tag["href"])
                     parsed = urlparse(full_url)
                     base_parsed = urlparse(base_url)
-                    # Only same domain
                     if parsed.netloc == base_parsed.netloc or not parsed.netloc:
                         found[key] = full_url
     return found
 
 
-def scrape_subpage(url, page_type):
-    """Scrape a subpage for additional intel."""
-    _, soup = fetch_page(url)
-    if not soup:
-        return {}
-
-    text = soup.get_text(separator=" ", strip=True)
-    info = {}
-
-    if page_type == "about":
-        paragraphs = soup.find_all("p")
-        long_p = [p.get_text(strip=True) for p in paragraphs if len(p.get_text(strip=True)) > 80]
-        if long_p:
-            info["about_text"] = " ".join(long_p[:3])[:1000]
-
-    elif page_type == "pricing":
-        info["has_pricing_page"] = True
-        # Look for price patterns
-        prices = re.findall(r"\$[\d,]+(?:\.\d{2})?(?:/\w+)?", text)
-        if prices:
-            info["pricing_points"] = list(set(prices))[:10]
-
-    elif page_type == "careers":
-        info["has_careers_page"] = True
-        # Count job-like listings
-        job_elements = soup.find_all(["li", "div", "a"], string=re.compile(
-            r"engineer|developer|designer|manager|analyst|sales|marketing", re.I
-        ))
-        if job_elements:
-            info["job_roles_found"] = len(job_elements)
-
-    elif page_type == "team":
-        info["has_team_page"] = True
-        # Count team member cards/images
-        images = soup.find_all("img", alt=True)
-        team_imgs = [img for img in images if len(img["alt"]) > 3 and not re.search(r"logo|icon|banner", img["alt"], re.I)]
-        if team_imgs:
-            info["team_size_estimate"] = len(team_imgs)
-
-    return info
-
+# =============================================================================
+# MAIN SCRAPE
+# =============================================================================
 
 def scrape_website(url):
-    """Main scraping function for a single website. Returns a dict of intel."""
+    """Scrape a website against the full 6-category checklist."""
     url = normalize_url(url)
     if not url:
         return {"scrape_status": "no_url"}
@@ -288,33 +767,53 @@ def scrape_website(url):
 
     intel["scrape_status"] = "success"
     intel["final_url"] = resp.url
+    html = str(soup)
     text = soup.get_text(separator=" ", strip=True)
-
-    # Extract all intel from homepage
-    intel.update(extract_meta(soup))
-    intel["social_links"] = extract_social_links(soup, url)
-    intel["emails"] = extract_emails(soup, text)
-    intel["phone_numbers"] = extract_phone_numbers(text)
-    intel["tech_stack"] = extract_tech_stack(soup, resp.headers)
-    intel.update(extract_company_info(soup, text))
-
-    # Find and scrape key subpages
+    links = get_all_links(soup, url)
     subpages = find_subpages(soup, url)
     intel["subpages_found"] = list(subpages.keys())
 
-    for page_type, page_url in subpages.items():
-        time.sleep(0.5)  # Be polite
-        sub_intel = scrape_subpage(page_url, page_type)
-        intel.update(sub_intel)
+    # Run all 6 checklist categories
+    # 1. Booking infrastructure
+    booking = analyze_booking(soup, html, links, url)
+    for k, v in booking.items():
+        intel[f"booking_{k}"] = v
+
+    # 2. Site performance
+    perf = analyze_performance(resp, soup, url)
+    for k, v in perf.items():
+        intel[f"perf_{k}"] = v
+
+    # 3. Offer details
+    offer = analyze_offer(soup, text, html, subpages)
+    for k, v in offer.items():
+        intel[f"offer_{k}"] = v
+
+    # 4. Audience signals
+    audience = analyze_audience(soup, text, html, links, subpages)
+    for k, v in audience.items():
+        intel[f"audience_{k}"] = v
+
+    # 5. Timing/recency signals
+    timing = analyze_timing(soup, text, html)
+    for k, v in timing.items():
+        intel[f"timing_{k}"] = v
+
+    # 6. Technical gaps
+    tech_gaps = analyze_technical_gaps(soup, text, html, resp, links, booking)
+    for k, v in tech_gaps.items():
+        intel[f"gaps_{k}"] = v
 
     return intel
 
 
+# =============================================================================
+# CSV PROCESSING (CLI usage)
+# =============================================================================
+
 def process_csv(input_path, output_path):
-    """Read leads CSV, scrape each lead's website, write enriched CSV."""
     df = pd.read_csv(input_path)
 
-    # Find the website column (flexible matching)
     website_col = None
     for col in df.columns:
         if any(kw in col.lower() for kw in ["website", "url", "domain", "web"]):
@@ -323,8 +822,7 @@ def process_csv(input_path, output_path):
 
     if not website_col:
         print("Available columns:", list(df.columns))
-        print("ERROR: No website/URL column found in CSV. Please ensure your CSV has a column "
-              "with 'website', 'url', or 'domain' in its name.")
+        print("ERROR: No website/URL column found.")
         sys.exit(1)
 
     print(f"Found website column: '{website_col}'")
@@ -345,17 +843,15 @@ def process_csv(input_path, output_path):
             for idx, row in df.iterrows()
         }
         for future in as_completed(futures):
-            idx, intel = future.result()
-            results.append((idx, intel))
+            idx, intel_data = future.result()
+            results.append((idx, intel_data))
 
-    # Sort by original order
     results.sort(key=lambda x: x[0])
 
-    # Flatten intel into columns
     enrichment_rows = []
-    for idx, intel in results:
+    for idx, intel_data in results:
         flat = {}
-        for key, value in intel.items():
+        for key, value in intel_data.items():
             if isinstance(value, (list, dict)):
                 flat[f"enriched_{key}"] = json.dumps(value)
             else:
@@ -374,11 +870,8 @@ def process_csv(input_path, output_path):
 if __name__ == "__main__":
     if len(sys.argv) < 2:
         print("Usage: python3 scraper.py <input.csv> [output.csv]")
-        print("\nThe CSV should have a column containing website URLs")
-        print("(column name should contain 'website', 'url', or 'domain')")
         sys.exit(1)
 
     input_file = sys.argv[1]
     output_file = sys.argv[2] if len(sys.argv) > 2 else input_file.replace(".csv", "_enriched.csv")
-
     process_csv(input_file, output_file)
