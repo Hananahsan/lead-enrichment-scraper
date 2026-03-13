@@ -309,6 +309,127 @@
         }
 
         .done-text p { color: #888; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            margin-bottom: 24px;
+            background: #111;
+            border-radius: 12px;
+            padding: 4px;
+            border: 1px solid #222;
+        }
+
+        .tab {
+            flex: 1;
+            padding: 12px 20px;
+            text-align: center;
+            font-size: 14px;
+            font-weight: 600;
+            color: #888;
+            cursor: pointer;
+            border-radius: 8px;
+            transition: all 0.15s;
+        }
+
+        .tab.active {
+            background: #4f8fff;
+            color: #fff;
+        }
+
+        .tab:not(.active):hover {
+            color: #ccc;
+        }
+
+        /* URL Input */
+        .url-input-area {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 16px;
+            padding: 40px;
+        }
+
+        .url-input-area label {
+            display: block;
+            font-size: 14px;
+            color: #888;
+            margin-bottom: 10px;
+        }
+
+        .url-input-row {
+            display: flex;
+            gap: 12px;
+        }
+
+        .url-input-row input {
+            flex: 1;
+            padding: 14px 18px;
+            border-radius: 10px;
+            border: 1px solid #333;
+            background: #0a0a0a;
+            color: #fff;
+            font-size: 15px;
+            outline: none;
+            transition: border-color 0.15s;
+        }
+
+        .url-input-row input:focus {
+            border-color: #4f8fff;
+        }
+
+        .url-input-row input::placeholder {
+            color: #555;
+        }
+
+        /* Single URL results */
+        .results-grid {
+            display: grid;
+            gap: 20px;
+            margin-top: 20px;
+        }
+
+        .result-category {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            padding: 24px;
+        }
+
+        .result-category h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #4f8fff;
+            margin-bottom: 16px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #1a1a1a;
+        }
+
+        .result-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #111;
+            font-size: 13px;
+        }
+
+        .result-row:last-child { border-bottom: none; }
+
+        .result-key {
+            color: #888;
+            min-width: 200px;
+        }
+
+        .result-value {
+            color: #e0e0e0;
+            text-align: right;
+            word-break: break-word;
+            max-width: 500px;
+        }
+
+        .result-value.good { color: #34d399; }
+        .result-value.bad { color: #f87171; }
+        .result-value.warn { color: #fbbf24; }
     </style>
 </head>
 <body>
@@ -320,13 +441,50 @@
 
         <!-- Step 1: Upload -->
         <div id="step-upload">
-            <div class="upload-area" id="dropzone">
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
-                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-                </svg>
-                <h3>Drop your CSV file here</h3>
-                <p>or click to browse — must contain a website/URL column</p>
-                <input type="file" id="fileInput" accept=".csv">
+            <div class="tabs">
+                <div class="tab active" id="tab-csv" onclick="switchTab('csv')">Upload CSV</div>
+                <div class="tab" id="tab-url" onclick="switchTab('url')">Single URL</div>
+            </div>
+
+            <div id="mode-csv">
+                <div class="upload-area" id="dropzone">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                    </svg>
+                    <h3>Drop your CSV file here</h3>
+                    <p>or click to browse — must contain a website/URL column</p>
+                    <input type="file" id="fileInput" accept=".csv">
+                </div>
+            </div>
+
+            <div id="mode-url" class="hidden">
+                <div class="url-input-area">
+                    <label>Enter a website URL to scrape</label>
+                    <div class="url-input-row">
+                        <input type="text" id="urlInput" placeholder="https://example.com" />
+                        <button class="btn btn-primary" id="scrape-url-btn">Scrape</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step: Single URL Results -->
+        <div id="step-url-results" class="hidden">
+            <div class="card">
+                <div id="url-loading" class="hidden" style="text-align:center; padding: 40px 0;">
+                    <h2 class="pulsing">Scraping website...</h2>
+                    <div class="current-url" id="url-scraping" style="margin-top:12px;"></div>
+                </div>
+                <div id="url-results-content" class="hidden">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                        <h2 style="margin-bottom:0;">Scrape Results</h2>
+                        <div style="display:flex; gap:10px;">
+                            <a class="btn btn-success" id="url-download-btn" style="font-size:13px; padding:8px 18px;">Download CSV</a>
+                            <button class="btn btn-outline" id="url-back-btn" style="font-size:13px; padding:8px 18px;">Scrape Another</button>
+                        </div>
+                    </div>
+                    <div class="results-grid" id="url-results-grid"></div>
+                </div>
             </div>
         </div>
 
@@ -431,9 +589,17 @@
 
         // Steps
         function showStep(step) {
-            ['upload', 'preview', 'progress', 'done'].forEach(s => {
+            ['upload', 'preview', 'progress', 'done', 'url-results'].forEach(s => {
                 $(`#step-${s}`).classList.toggle('hidden', s !== step);
             });
+        }
+
+        // Tabs
+        function switchTab(mode) {
+            $('#tab-csv').classList.toggle('active', mode === 'csv');
+            $('#tab-url').classList.toggle('active', mode === 'url');
+            $('#mode-csv').classList.toggle('hidden', mode !== 'csv');
+            $('#mode-url').classList.toggle('hidden', mode !== 'url');
         }
 
         // Drag & drop
@@ -545,6 +711,181 @@
         // Reset buttons
         $('#reset-btn').addEventListener('click', () => { showStep('upload'); fileInput.value = ''; });
         $('#new-btn').addEventListener('click', () => { showStep('upload'); fileInput.value = ''; });
+
+        // ===== Single URL Scraping =====
+        $('#scrape-url-btn').addEventListener('click', startUrlScrape);
+        $('#urlInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') startUrlScrape(); });
+
+        async function startUrlScrape() {
+            const url = $('#urlInput').value.trim();
+            if (!url) { alert('Please enter a URL'); return; }
+
+            showStep('url-results');
+            $('#url-loading').classList.remove('hidden');
+            $('#url-results-content').classList.add('hidden');
+            $('#url-scraping').textContent = url;
+
+            const res = await fetch('/scrape-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ url }),
+            });
+            const data = await res.json();
+
+            if (data.error) { alert(data.error); showStep('upload'); return; }
+
+            // Poll for results
+            const jobId = data.job_id;
+            const poll = setInterval(async () => {
+                const sr = await fetch(`/status/${jobId}`);
+                const sd = await sr.json();
+
+                if (sd.status === 'done') {
+                    clearInterval(poll);
+                    $('#url-loading').classList.add('hidden');
+                    $('#url-results-content').classList.remove('hidden');
+                    $('#url-download-btn').href = `/download/${jobId}`;
+                    renderUrlResults(sd.results);
+                }
+                if (sd.status === 'error') {
+                    clearInterval(poll);
+                    alert('Error: ' + sd.error);
+                    showStep('upload');
+                }
+            }, 1000);
+        }
+
+        function renderUrlResults(results) {
+            const grid = $('#url-results-grid');
+            grid.innerHTML = '';
+
+            const categories = {
+                'Booking Infrastructure': {
+                    prefix: 'booking_',
+                    format: {
+                        'booking_tool': 'Booking Tool',
+                        'booking_tool_branded': 'Branded or Generic',
+                        'booking_cta_above_fold': 'CTA Above Fold',
+                        'booking_pre_call_sequence_visible': 'Pre-Call Sequence',
+                        'booking_clicks_to_book': 'Clicks to Book',
+                        'booking_cta_works': 'CTA Works',
+                        'booking_has_contact_form': 'Contact Form',
+                        'booking_booking_links': 'Booking Links',
+                    }
+                },
+                'Site Performance': {
+                    prefix: 'perf_',
+                    format: {
+                        'perf_load_time_seconds': 'Load Time (seconds)',
+                        'perf_page_size_kb': 'Page Size (KB)',
+                        'perf_mobile_viewport_set': 'Mobile Viewport Set',
+                        'perf_image_count': 'Image Count',
+                        'perf_mobile_layout_issues': 'Mobile Issues',
+                    }
+                },
+                'Offer Details': {
+                    prefix: 'offer_',
+                    format: {
+                        'offer_offer_type': 'Offer Type',
+                        'offer_price_range': 'Price Range',
+                        'offer_price_points': 'Price Points',
+                        'offer_target_client': 'Target Client',
+                        'offer_solo_or_multi_coach': 'Solo/Multi Coach',
+                        'offer_offer_description': 'Description',
+                    }
+                },
+                'Audience Signals': {
+                    prefix: 'audience_',
+                    format: {
+                        'audience_serves_multiple_audiences': 'Multiple Audiences',
+                        'audience_audience_segments': 'Segments',
+                        'audience_has_active_blog': 'Active Blog',
+                        'audience_latest_blog_date': 'Latest Blog Date',
+                        'audience_has_podcast': 'Has Podcast',
+                        'audience_has_youtube': 'Has YouTube',
+                        'audience_social_proof_testimonials': 'Testimonials',
+                        'audience_testimonial_count': 'Testimonial Count',
+                        'audience_social_proof_logos': 'Logo Bar',
+                        'audience_social_proof_media_mentions': 'Media Mentions',
+                        'audience_social_proof_details': 'Social Proof Details',
+                    }
+                },
+                'Timing / Recency Signals': {
+                    prefix: 'timing_',
+                    format: {
+                        'timing_copyright_year': 'Copyright Year',
+                        'timing_site_looks_recent': 'Site Looks Recent',
+                        'timing_now_enrolling_banner': 'Enrolling Banner',
+                        'timing_new_program_signals': 'New Program Signals',
+                        'timing_recent_press_on_site': 'Recent Press',
+                        'timing_hiring_indicators': 'Hiring Indicators',
+                        'timing_design_assessment': 'Design Assessment',
+                    }
+                },
+                'Technical Gaps': {
+                    prefix: 'gaps_',
+                    format: {
+                        'gaps_has_ssl': 'Has SSL',
+                        'gaps_ssl_issues': 'SSL Issues',
+                        'gaps_missing_favicon': 'Missing Favicon',
+                        'gaps_outdated_footer_year': 'Outdated Footer Year',
+                        'gaps_placeholder_text_found': 'Placeholder Text',
+                        'gaps_placeholder_details': 'Placeholder Details',
+                        'gaps_conflicting_ctas': 'Conflicting CTAs',
+                        'gaps_cta_count': 'CTA Count',
+                        'gaps_cta_list': 'CTAs Found',
+                        'gaps_booking_page_no_context': 'Booking Page No Context',
+                        'gaps_broken_links': 'Broken Links',
+                        'gaps_technical_issues_summary': 'Issues Summary',
+                    }
+                },
+            };
+
+            for (const [catName, catInfo] of Object.entries(categories)) {
+                const section = document.createElement('div');
+                section.className = 'result-category';
+                section.innerHTML = `<h3>${catName}</h3>`;
+
+                for (const [key, label] of Object.entries(catInfo.format)) {
+                    let value = results[key];
+                    if (value === undefined || value === null) continue;
+
+                    const row = document.createElement('div');
+                    row.className = 'result-row';
+
+                    let displayVal = value;
+                    let valClass = '';
+
+                    if (Array.isArray(value)) {
+                        if (value.length === 0) { displayVal = 'None'; }
+                        else if (typeof value[0] === 'object') { displayVal = value.map(v => v.text || v.url || JSON.stringify(v)).join(', '); }
+                        else { displayVal = value.join(', '); }
+                    } else if (typeof value === 'object') {
+                        displayVal = JSON.stringify(value);
+                    } else if (typeof value === 'boolean') {
+                        displayVal = value ? 'Yes' : 'No';
+                        if (key.includes('broken') || key.includes('missing') || key.includes('outdated') || key.includes('placeholder') || key.includes('conflicting') || key.includes('no_context')) {
+                            valClass = value ? 'bad' : 'good';
+                        } else {
+                            valClass = value ? 'good' : 'warn';
+                        }
+                    }
+
+                    row.innerHTML = `
+                        <span class="result-key">${label}</span>
+                        <span class="result-value ${valClass}">${displayVal}</span>
+                    `;
+                    section.appendChild(row);
+                }
+
+                grid.appendChild(section);
+            }
+        }
+
+        $('#url-back-btn').addEventListener('click', () => {
+            $('#urlInput').value = '';
+            showStep('upload');
+        });
     </script>
 </body>
 </html>

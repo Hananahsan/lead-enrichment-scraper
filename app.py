@@ -116,6 +116,56 @@ def upload():
     })
 
 
+@app.route("/scrape-url", methods=["POST"])
+def scrape_url():
+    """Scrape a single URL and return results as JSON + downloadable CSV."""
+    data = request.get_json()
+    url = data.get("url", "").strip()
+    if not url:
+        return jsonify({"error": "No URL provided"}), 400
+
+    job_id = str(uuid.uuid4())[:8]
+    jobs[job_id] = {
+        "status": "running",
+        "total": 1,
+        "current": 0,
+        "current_url": url,
+        "stats": {},
+        "started_at": datetime.now().isoformat(),
+    }
+
+    def run_single(job_id, url):
+        try:
+            intel = scrape_website(url)
+            status = intel.get("scrape_status", "unknown")
+            jobs[job_id]["current"] = 1
+            jobs[job_id]["stats"][status] = 1
+
+            # Save as CSV
+            flat = {}
+            for key, value in intel.items():
+                if isinstance(value, (list, dict)):
+                    flat[f"enriched_{key}"] = json.dumps(value)
+                else:
+                    flat[f"enriched_{key}"] = value
+
+            output_path = os.path.join(app.config["OUTPUT_FOLDER"], f"{job_id}.csv")
+            pd.DataFrame([flat]).to_csv(output_path, index=False)
+
+            jobs[job_id]["status"] = "done"
+            jobs[job_id]["output_path"] = output_path
+            jobs[job_id]["results"] = intel
+        except Exception as e:
+            jobs[job_id]["status"] = "error"
+            jobs[job_id]["error"] = str(e)
+
+    thread = threading.Thread(target=run_single, args=(job_id, url))
+    thread.daemon = True
+    thread.start()
+
+    return jsonify({"job_id": job_id, "status": "started"})
+
+
 @app.route("/start/<job_id>", methods=["POST"])
 def start(job_id):
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], f"{job_id}.csv")
