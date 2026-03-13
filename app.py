@@ -14,9 +14,12 @@ from scraper import scrape_website, normalize_url
 import pandas as pd
 
 app = Flask(__name__)
-app.config["UPLOAD_FOLDER"] = os.path.join(os.path.dirname(__file__), "uploads")
-app.config["OUTPUT_FOLDER"] = os.path.join(os.path.dirname(__file__), "outputs")
+app.config["UPLOAD_FOLDER"] = os.path.join("/tmp", "scraper_uploads")
+app.config["OUTPUT_FOLDER"] = os.path.join("/tmp", "scraper_outputs")
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # 16MB max
+
+os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
+os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 
 # In-memory job tracking
 jobs = {}
@@ -154,6 +157,4 @@ def download(job_id):
 
 
 if __name__ == "__main__":
-    os.makedirs(app.config["UPLOAD_FOLDER"], exist_ok=True)
-    os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
     app.run(debug=True, port=5001)
