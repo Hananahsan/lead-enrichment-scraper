@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lead Enrichment Scraper</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 40px 20px;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 48px;
+        }
+
+        header h1 {
+            font-size: 32px;
+            font-weight: 700;
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        header p {
+            color: #888;
+            font-size: 16px;
+        }
+
+        /* Upload Area */
+        .upload-area {
+            border: 2px dashed #333;
+            border-radius: 16px;
+            padding: 60px 40px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #111;
+        }
+
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #4f8fff;
+            background: #0d1b2a;
+        }
+
+        .upload-area svg {
+            width: 48px;
+            height: 48px;
+            margin-bottom: 16px;
+            color: #555;
+        }
+
+        .upload-area h3 {
+            font-size: 18px;
+            color: #ccc;
+            margin-bottom: 8px;
+        }
+
+        .upload-area p {
+            color: #666;
+            font-size: 14px;
+        }
+
+        .upload-area input[type="file"] {
+            display: none;
+        }
+
+        /* Cards */
+        .card {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+        }
+
+        .card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #fff;
+        }
+
+        /* Preview Table */
+        .table-wrap {
+            overflow-x: auto;
+            border-radius: 8px;
+            border: 1px solid #222;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th {
+            background: #1a1a1a;
+            padding: 10px 14px;
+            text-align: left;
+            font-weight: 600;
+            color: #aaa;
+            white-space: nowrap;
+            border-bottom: 1px solid #222;
+        }
+
+        td {
+            padding: 10px 14px;
+            border-bottom: 1px solid #1a1a1a;
+            max-width: 200px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            color: #ccc;
+        }
+
+        /* Info bar */
+        .info-bar {
+            display: flex;
+            gap: 24px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 14px;
+        }
+
+        .info-item .label { color: #666; }
+        .info-item .value { color: #fff; font-weight: 600; }
+
+        .badge {
+            display: inline-block;
+            padding: 2px 10px;
+            border-radius: 99px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .badge-ok { background: #0a2e1a; color: #34d399; }
+        .badge-warn { background: #2e2a0a; color: #fbbf24; }
+
+        /* Buttons */
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 28px;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            border: none;
+            cursor: pointer;
+            transition: all 0.15s;
+        }
+
+        .btn-primary {
+            background: #4f8fff;
+            color: #fff;
+        }
+
+        .btn-primary:hover { background: #3a7ae8; }
+
+        .btn-primary:disabled {
+            background: #333;
+            color: #666;
+            cursor: not-allowed;
+        }
+
+        .btn-success {
+            background: #059669;
+            color: #fff;
+        }
+
+        .btn-success:hover { background: #047857; }
+
+        .btn-outline {
+            background: transparent;
+            color: #888;
+            border: 1px solid #333;
+        }
+
+        .btn-outline:hover { border-color: #555; color: #ccc; }
+
+        .btn-row {
+            display: flex;
+            gap: 12px;
+            margin-top: 24px;
+        }
+
+        /* Progress */
+        .progress-section { margin-top: 8px; }
+
+        .progress-bar-wrap {
+            width: 100%;
+            height: 8px;
+            background: #1a1a1a;
+            border-radius: 99px;
+            overflow: hidden;
+            margin: 16px 0;
+        }
+
+        .progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #4f8fff, #7c3aed);
+            border-radius: 99px;
+            transition: width 0.3s;
+            width: 0%;
+        }
+
+        .progress-info {
+            display: flex;
+            justify-content: space-between;
+            font-size: 13px;
+            color: #888;
+        }
+
+        .current-url {
+            font-size: 13px;
+            color: #555;
+            margin-top: 8px;
+            font-family: monospace;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: #1a1a1a;
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-card .number {
+            font-size: 28px;
+            font-weight: 700;
+            color: #fff;
+        }
+
+        .stat-card .label {
+            font-size: 13px;
+            color: #666;
+            margin-top: 4px;
+        }
+
+        .stat-card.success .number { color: #34d399; }
+        .stat-card.failed .number { color: #f87171; }
+        .stat-card.skipped .number { color: #fbbf24; }
+
+        /* Sections visibility */
+        .hidden { display: none; }
+
+        /* Animations */
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .pulsing { animation: pulse 2s ease-in-out infinite; }
+
+        /* Done section */
+        .done-icon {
+            width: 64px;
+            height: 64px;
+            background: #0a2e1a;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 20px;
+        }
+
+        .done-icon svg {
+            width: 32px;
+            height: 32px;
+            color: #34d399;
+        }
+
+        .done-text {
+            text-align: center;
+            margin-bottom: 24px;
+        }
+
+        .done-text h2 {
+            color: #fff;
+            margin-bottom: 8px;
+        }
+
+        .done-text p { color: #888; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Lead Enrichment Scraper</h1>
+            <p>Upload your Apollo CSV and enrich leads with website intelligence</p>
+        </header>
+
+        <!-- Step 1: Upload -->
+        <div id="step-upload">
+            <div class="upload-area" id="dropzone">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                </svg>
+                <h3>Drop your CSV file here</h3>
+                <p>or click to browse — must contain a website/URL column</p>
+                <input type="file" id="fileInput" accept=".csv">
+            </div>
+        </div>
+
+        <!-- Step 2: Preview -->
+        <div id="step-preview" class="hidden">
+            <div class="card">
+                <h2>CSV Preview</h2>
+                <div class="info-bar">
+                    <div class="info-item">
+                        <span class="label">Rows:</span>
+                        <span class="value" id="row-count">0</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="label">Website column:</span>
+                        <span class="value" id="website-col">—</span>
+                    </div>
+                    <div class="info-item" id="col-status"></div>
+                </div>
+                <div class="table-wrap">
+                    <table id="preview-table">
+                        <thead><tr id="preview-header"></tr></thead>
+                        <tbody id="preview-body"></tbody>
+                    </table>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-primary" id="start-btn">Start Enrichment</button>
+                    <button class="btn btn-outline" id="reset-btn">Upload Different File</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 3: Progress -->
+        <div id="step-progress" class="hidden">
+            <div class="card">
+                <h2 class="pulsing">Scraping in progress...</h2>
+                <div class="progress-section">
+                    <div class="progress-bar-wrap">
+                        <div class="progress-bar" id="progress-bar"></div>
+                    </div>
+                    <div class="progress-info">
+                        <span id="progress-count">0 / 0</span>
+                        <span id="progress-pct">0%</span>
+                    </div>
+                    <div class="current-url" id="current-url"></div>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card success">
+                        <div class="number" id="stat-success">0</div>
+                        <div class="label">Scraped</div>
+                    </div>
+                    <div class="stat-card failed">
+                        <div class="number" id="stat-failed">0</div>
+                        <div class="label">Failed</div>
+                    </div>
+                    <div class="stat-card skipped">
+                        <div class="number" id="stat-skipped">0</div>
+                        <div class="label">No URL</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4: Done -->
+        <div id="step-done" class="hidden">
+            <div class="card">
+                <div class="done-icon">
+                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                    </svg>
+                </div>
+                <div class="done-text">
+                    <h2>Enrichment Complete</h2>
+                    <p id="done-summary"></p>
+                </div>
+                <div class="stats-grid">
+                    <div class="stat-card success">
+                        <div class="number" id="done-success">0</div>
+                        <div class="label">Scraped</div>
+                    </div>
+                    <div class="stat-card failed">
+                        <div class="number" id="done-failed">0</div>
+                        <div class="label">Failed</div>
+                    </div>
+                    <div class="stat-card skipped">
+                        <div class="number" id="done-skipped">0</div>
+                        <div class="label">No URL</div>
+                    </div>
+                </div>
+                <div class="btn-row" style="justify-content: center;">
+                    <a class="btn btn-success" id="download-btn">Download Enriched CSV</a>
+                    <button class="btn btn-outline" id="new-btn">Start New Enrichment</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentJobId = null;
+        let pollInterval = null;
+
+        const $ = (sel) => document.querySelector(sel);
+
+        // Steps
+        function showStep(step) {
+            ['upload', 'preview', 'progress', 'done'].forEach(s => {
+                $(`#step-${s}`).classList.toggle('hidden', s !== step);
+            });
+        }
+
+        // Drag & drop
+        const dropzone = $('#dropzone');
+        const fileInput = $('#fileInput');
+
+        dropzone.addEventListener('click', () => fileInput.click());
+        dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
+        dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
+        dropzone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropzone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
+
+        async function handleFile(file) {
+            if (!file.name.endsWith('.csv')) {
+                alert('Please upload a CSV file');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('file', file);
+
+            const res = await fetch('/upload', { method: 'POST', body: formData });
+            const data = await res.json();
+
+            if (data.error) {
+                alert(data.error);
+                return;
+            }
+
+            currentJobId = data.job_id;
+            $('#row-count').textContent = data.rows;
+            $('#website-col').textContent = data.website_column || 'Not found';
+            $('#col-status').innerHTML = data.website_column
+                ? '<span class="badge badge-ok">Detected</span>'
+                : '<span class="badge badge-warn">Not found</span>';
+
+            // Build preview table
+            const header = $('#preview-header');
+            const body = $('#preview-body');
+            header.innerHTML = '';
+            body.innerHTML = '';
+
+            data.columns.forEach(col => {
+                const th = document.createElement('th');
+                th.textContent = col;
+                header.appendChild(th);
+            });
+
+            data.preview.forEach(row => {
+                const tr = document.createElement('tr');
+                data.columns.forEach(col => {
+                    const td = document.createElement('td');
+                    td.textContent = row[col] ?? '';
+                    td.title = row[col] ?? '';
+                    tr.appendChild(td);
+                });
+                body.appendChild(tr);
+            });
+
+            $('#start-btn').disabled = !data.website_column;
+            showStep('preview');
+        }
+
+        // Start scraping
+        $('#start-btn').addEventListener('click', async () => {
+            await fetch(`/start/${currentJobId}`, { method: 'POST' });
+            showStep('progress');
+            pollInterval = setInterval(pollStatus, 1000);
+        });
+
+        async function pollStatus() {
+            const res = await fetch(`/status/${currentJobId}`);
+            const data = await res.json();
+
+            if (data.error) return;
+
+            const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
+            $('#progress-bar').style.width = pct + '%';
+            $('#progress-count').textContent = `${data.current} / ${data.total}`;
+            $('#progress-pct').textContent = pct + '%';
+            $('#current-url').textContent = data.current_url || '';
+            $('#stat-success').textContent = data.stats.success || 0;
+            $('#stat-failed').textContent = data.stats.failed || 0;
+            $('#stat-skipped').textContent = data.stats.no_url || 0;
+
+            if (data.status === 'done') {
+                clearInterval(pollInterval);
+                $('#done-success').textContent = data.stats.success || 0;
+                $('#done-failed').textContent = data.stats.failed || 0;
+                $('#done-skipped').textContent = data.stats.no_url || 0;
+                const total = data.total || 0;
+                const success = data.stats.success || 0;
+                $('#done-summary').textContent = `${success} of ${total} leads enriched with website intel.`;
+                $('#download-btn').href = `/download/${currentJobId}`;
+                showStep('done');
+            }
+
+            if (data.status === 'error') {
+                clearInterval(pollInterval);
+                alert('Error: ' + data.error);
+                showStep('upload');
+            }
+        }
+
+        // Reset buttons
+        $('#reset-btn').addEventListener('click', () => { showStep('upload'); fileInput.value = ''; });
+        $('#new-btn').addEventListener('click', () => { showStep('upload'); fileInput.value = ''; });
+    </script>
+</body>
+</html>

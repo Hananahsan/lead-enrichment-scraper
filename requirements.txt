@@ -1,0 +1,8 @@
+requests
+beautifulsoup4
+pandas
+lxml
+builtwith
+tldextract
+flask
+gunicorn
