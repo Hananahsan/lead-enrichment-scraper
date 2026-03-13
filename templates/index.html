@@ -761,20 +761,29 @@
 
             const categories = {
                 'Booking Infrastructure': {
-                    prefix: 'booking_',
                     format: {
-                        'booking_tool': 'Booking Tool',
-                        'booking_tool_branded': 'Branded or Generic',
-                        'booking_cta_above_fold': 'CTA Above Fold',
+                        'booking_booking_tool': 'Booking Tool',
+                        'booking_booking_tool_branded': 'Branded or Generic',
+                        'booking_booking_cta_above_fold': 'CTA Above Fold',
                         'booking_pre_call_sequence_visible': 'Pre-Call Sequence',
                         'booking_clicks_to_book': 'Clicks to Book',
-                        'booking_cta_works': 'CTA Works',
+                        'booking_booking_cta_works': 'CTA Works',
                         'booking_has_contact_form': 'Contact Form',
                         'booking_booking_links': 'Booking Links',
                     }
                 },
+                'Paid Ads Detection': {
+                    format: {
+                        'ads_has_facebook_pixel': 'Facebook/Meta Pixel',
+                        'ads_has_google_ads_tag': 'Google Ads Tag',
+                        'ads_has_linkedin_pixel': 'LinkedIn Pixel',
+                        'ads_has_retargeting_pixels': 'Retargeting Pixels',
+                        'ads_utm_parameters_found': 'UTM Parameters Found',
+                        'ads_likely_running_paid': 'Likely Running Paid Ads',
+                        'ads_ad_details': 'Ad Details',
+                    }
+                },
                 'Site Performance': {
-                    prefix: 'perf_',
                     format: {
                         'perf_load_time_seconds': 'Load Time (seconds)',
                         'perf_page_size_kb': 'Page Size (KB)',
@@ -784,18 +793,30 @@
                     }
                 },
                 'Offer Details': {
-                    prefix: 'offer_',
                     format: {
                         'offer_offer_type': 'Offer Type',
                         'offer_price_range': 'Price Range',
                         'offer_price_points': 'Price Points',
+                        'offer_pricing_page_exists': 'Pricing Page Exists',
+                        'offer_pricing_page_url': 'Pricing Page URL',
+                        'offer_application_required': 'Application Required',
+                        'offer_sales_model': 'Sales Model',
                         'offer_target_client': 'Target Client',
                         'offer_solo_or_multi_coach': 'Solo/Multi Coach',
                         'offer_offer_description': 'Description',
                     }
                 },
+                'Solo vs Multi-Coach (Deep Scan)': {
+                    format: {
+                        'team_solo_or_multi_coach': 'Determination',
+                        'team_team_page_exists': 'Team Page Exists',
+                        'team_team_coach_count': 'Coach Count',
+                        'team_team_coach_names': 'Coach Names',
+                        'team_copy_uses_i_my': 'Copy Uses I/My',
+                        'team_copy_uses_we_our': 'Copy Uses We/Our',
+                    }
+                },
                 'Audience Signals': {
-                    prefix: 'audience_',
                     format: {
                         'audience_serves_multiple_audiences': 'Multiple Audiences',
                         'audience_audience_segments': 'Segments',
@@ -811,7 +832,6 @@
                     }
                 },
                 'Timing / Recency Signals': {
-                    prefix: 'timing_',
                     format: {
                         'timing_copyright_year': 'Copyright Year',
                         'timing_site_looks_recent': 'Site Looks Recent',
@@ -823,7 +843,6 @@
                     }
                 },
                 'Technical Gaps': {
-                    prefix: 'gaps_',
                     format: {
                         'gaps_has_ssl': 'Has SSL',
                         'gaps_ssl_issues': 'SSL Issues',

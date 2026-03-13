@@ -202,6 +202,71 @@ def analyze_booking(soup, html, links, base_url):
 
 
 # =============================================================================
+# 1b. PAID ADS DETECTION
+# =============================================================================
+
+def analyze_paid_ads(soup, html):
+    """Gap 1: Detect paid ad signals from website source."""
+    data = {
+        "has_facebook_pixel": False,
+        "has_google_ads_tag": False,
+        "has_linkedin_pixel": False,
+        "has_retargeting_pixels": False,
+        "utm_parameters_found": False,
+        "likely_running_paid": False,
+        "ad_details": [],
+    }
+
+    # Facebook / Meta Pixel
+    if re.search(r"fbq\(|facebook\.com/tr|_fbp|connect\.facebook\.net|fbevents\.js", html, re.I):
+        data["has_facebook_pixel"] = True
+        data["ad_details"].append("Facebook/Meta Pixel detected")
+
+    # Google Ads / gtag
+    if re.search(r"googleads|gads|google_conversion|AW-\d+|ads\.google|adservice\.google", html, re.I):
+        data["has_google_ads_tag"] = True
+        data["ad_details"].append("Google Ads tag detected")
+
+    # LinkedIn Insight Tag
+    if re.search(r"snap\.licdn\.com|_linkedin_partner_id|linkedin\.com/px", html, re.I):
+        data["has_linkedin_pixel"] = True
+        data["ad_details"].append("LinkedIn Insight Tag detected")
+
+    # Retargeting / analytics pixels
+    retargeting = []
+    if re.search(r"hotjar\.com|static\.hotjar", html, re.I):
+        retargeting.append("Hotjar")
+    if re.search(r"clarity\.ms", html, re.I):
+        retargeting.append("Microsoft Clarity")
+    if re.search(r"hs-scripts\.com|hs-analytics", html, re.I):
+        retargeting.append("HubSpot tracking")
+    if re.search(r"cdn\.segment\.com|analytics\.js", html, re.I):
+        retargeting.append("Segment")
+    if re.search(r"crisp\.chat", html, re.I):
+        retargeting.append("Crisp")
+    if re.search(r"intercom\.io", html, re.I):
+        retargeting.append("Intercom")
+    if retargeting:
+        data["has_retargeting_pixels"] = True
+        data["ad_details"].append(f"Retargeting/analytics: {', '.join(retargeting)}")
+
+    # UTM parameters in internal links
+    if re.search(r"utm_source|utm_medium=paid|utm_campaign", html, re.I):
+        data["utm_parameters_found"] = True
+        data["ad_details"].append("UTM parameters found in links")
+
+    # Likely running paid
+    data["likely_running_paid"] = any([
+        data["has_facebook_pixel"],
+        data["has_google_ads_tag"],
+        data["has_linkedin_pixel"],
+        data["utm_parameters_found"],
+    ])
+
+    return data
+
+
+# =============================================================================
 # 2. SITE PERFORMANCE
 # =============================================================================
 
@@ -259,8 +324,8 @@ def analyze_performance(resp, soup, url):
 # 3. OFFER DETAILS
 # =============================================================================
 
-def analyze_offer(soup, text, html, subpages):
-    """Checklist category 3: Offer details."""
+def analyze_offer(soup, text, html, subpages, base_url):
+    """Checklist category 3: Offer details (enhanced with Gap 3 fixes)."""
     data = {
         "offer_type": [],
         "price_points": [],
@@ -268,24 +333,64 @@ def analyze_offer(soup, text, html, subpages):
         "target_client": [],
         "solo_or_multi_coach": "Unknown",
         "offer_description": "",
+        "pricing_page_exists": False,
+        "pricing_page_url": "",
+        "application_required": False,
+        "sales_model": "Unknown",
     }
 
-    # Detect offer types
+    # Scrape additional pages for offer info: /pricing, /work-with-me, /services, /programs
+    all_text = text
+    offer_page_keywords = {
+        "pricing": r"pricing|invest|investment",
+        "services": r"services|programs|offerings|work-with-me|work-with|coaching|packages",
+    }
+    for page_key in ["pricing", "services"]:
+        page_url = subpages.get(page_key)
+        if page_url:
+            _, page_soup = fetch_page(page_url)
+            if page_soup:
+                page_text = page_soup.get_text(separator=" ", strip=True)
+                all_text += " " + page_text
+                if page_key == "pricing":
+                    data["pricing_page_exists"] = True
+                    data["pricing_page_url"] = page_url
+
+    # Also look for pricing-like pages not yet found
+    if not data["pricing_page_exists"]:
+        for a_tag in soup.find_all("a", href=True):
+            href = a_tag["href"].lower()
+            link_text = a_tag.get_text(strip=True).lower()
+            if re.search(r"pricing|invest|packages|work.?with", href + " " + link_text):
+                full_url = urljoin(base_url, a_tag["href"])
+                parsed = urlparse(full_url)
+                base_parsed = urlparse(base_url)
+                if parsed.netloc == base_parsed.netloc or not parsed.netloc:
+                    data["pricing_page_exists"] = True
+                    data["pricing_page_url"] = full_url
+                    _, ps = fetch_page(full_url)
+                    if ps:
+                        all_text += " " + ps.get_text(separator=" ", strip=True)
+                    break
+
+    full_text = all_text.lower()
+
+    # Detect offer types (expanded patterns from Gap 3)
     offer_patterns = {
-        "1-on-1 Coaching": r"1.?on.?1|one.?on.?one|individual.?coaching|private.?coaching|personal.?coaching",
+        "1-on-1 Coaching": r"1.?on.?1|1:1|one.?on.?one|individual.?coaching|private.?coaching|personal.?coaching",
         "Group Program": r"group.?program|group.?coaching|cohort|group.?session",
-        "Mastermind": r"mastermind",
-        "Course": r"online.?course|self.?paced|video.?course|digital.?course|training.?program",
+        "Mastermind": r"mastermind|membership.?community",
+        "Course": r"online.?course|self.?paced|video.?course|digital.?course|module|lesson",
         "Course + Coaching Hybrid": r"course.*coaching|coaching.*course|program.*support|program.*calls",
         "Workshop": r"workshop|bootcamp|intensive|immersive",
         "Membership": r"membership|community|monthly.?access|inner.?circle",
         "Retreat": r"retreat",
+        "VIP Day": r"vip.?day|vip.?intensive|half.?day|full.?day",
         "Corporate Training": r"corporate.?training|team.?training|leadership.?development|organizational",
-        "Consulting": r"consulting|advisory|fractional",
+        "Consulting/Advisory": r"consulting|advisory|fractional|retainer",
         "Speaking": r"keynote|speaking|book.?me.?to.?speak",
     }
 
-    full_text = text.lower()
     for offer, pattern in offer_patterns.items():
         if re.search(pattern, full_text):
             data["offer_type"].append(offer)
@@ -293,11 +398,10 @@ def analyze_offer(soup, text, html, subpages):
     if not data["offer_type"]:
         data["offer_type"] = ["Not clearly stated"]
 
-    # Price detection
-    prices = re.findall(r"\$[\d,]+(?:\.\d{2})?(?:\s*[/-]\s*\w+)?", text)
+    # Price detection — scan ALL text from all pages
+    prices = re.findall(r"\$[\d,]+(?:\.\d{2})?(?:\s*[/-]\s*\w+)?", all_text)
     if prices:
         data["price_points"] = list(set(prices))[:10]
-        # Try to determine range
         amounts = []
         for p in prices:
             num = re.search(r"[\d,]+", p)
@@ -308,11 +412,35 @@ def analyze_offer(soup, text, html, subpages):
             if max_price >= 2000:
                 data["price_range"] = "High-ticket ($2K+)"
             elif max_price >= 500:
-                data["price_range"] = "Mid-range ($500-$2K)"
+                data["price_range"] = "Mid-ticket ($500-$2K)"
             else:
                 data["price_range"] = "Low-ticket (under $500)"
     else:
-        data["price_range"] = "Not visible on site"
+        # Check for indirect price signals in testimonials
+        price_signals = re.findall(r"(?:invested|roi|5.?figure|6.?figure|five.?figure|six.?figure|\$\d)", full_text)
+        if price_signals:
+            data["price_range"] = "High-ticket (implied from testimonials)"
+        else:
+            data["price_range"] = "Not visible on site"
+
+    # Application-based vs self-serve (Gap 3)
+    apply_patterns = re.compile(r"apply.?now|application|book.?a.?discovery|schedule.?a.?consult|book.?a.?call|strategy.?call|qualify", re.I)
+    selfserve_patterns = re.compile(r"buy.?now|add.?to.?cart|enroll.?now|purchase|checkout|instant.?access", re.I)
+    contact_only = re.compile(r"contact.?us|get.?in.?touch|reach.?out|send.?a.?message", re.I)
+
+    has_apply = apply_patterns.search(all_text)
+    has_selfserve = selfserve_patterns.search(all_text)
+    has_contact = contact_only.search(all_text)
+
+    if has_apply:
+        data["application_required"] = True
+        data["sales_model"] = "Application-based"
+    elif has_selfserve:
+        data["sales_model"] = "Self-serve checkout"
+    elif has_contact:
+        data["sales_model"] = "Contact form only"
+    else:
+        data["sales_model"] = "Book a call" if re.search(r"book|schedule|call", full_text) else "Unknown"
 
     # Target client detection
     audience_patterns = {
@@ -335,30 +463,6 @@ def analyze_offer(soup, text, html, subpages):
     if not data["target_client"]:
         data["target_client"] = ["Not clearly defined"]
 
-    # Solo vs multi-coach
-    team_indicators = re.compile(
-        r"our.?team|our.?coaches|meet.?the.?team|certified.?coach(?:es)|"
-        r"team.?of|coach.?roster|faculty|facilitator",
-        re.I,
-    )
-    solo_indicators = re.compile(
-        r"about.?me\b|my.?story|i.?help|i.?work.?with|my.?approach|"
-        r"hi.?i.?m\b|i.?believe",
-        re.I,
-    )
-
-    team_match = team_indicators.search(text)
-    solo_match = solo_indicators.search(text)
-
-    if team_match and not solo_match:
-        data["solo_or_multi_coach"] = "Multi-coach platform"
-    elif solo_match and not team_match:
-        data["solo_or_multi_coach"] = "Solo coach"
-    elif team_match and solo_match:
-        data["solo_or_multi_coach"] = "Solo coach with team/support"
-    else:
-        data["solo_or_multi_coach"] = "Unknown"
-
     # Offer description from meta or first long paragraph
     meta_desc = soup.find("meta", attrs={"name": "description"})
     if meta_desc and meta_desc.get("content"):
@@ -370,6 +474,126 @@ def analyze_offer(soup, text, html, subpages):
             if len(ptext) > 80:
                 data["offer_description"] = ptext[:300]
                 break
+
+    return data
+
+
+# =============================================================================
+# 3b. SOLO VS MULTI-COACH (enhanced - Gap 2)
+# =============================================================================
+
+def analyze_solo_vs_multi(soup, text, html, subpages, base_url):
+    """Gap 2: Enhanced solo vs multi-coach detection."""
+    data = {
+        "solo_or_multi_coach": "Unknown",
+        "team_page_exists": False,
+        "team_coach_count": 0,
+        "team_coach_names": [],
+        "copy_uses_i_my": False,
+        "copy_uses_we_our": False,
+    }
+
+    # Check pronoun usage on homepage
+    # Count "I/my" vs "we/our" in body copy (not nav/footer)
+    body = soup.find("main") or soup.find("body")
+    body_text = body.get_text(separator=" ", strip=True) if body else text
+
+    i_my_count = len(re.findall(r"\b(?:I|my|me|myself)\b", body_text))
+    we_our_count = len(re.findall(r"\b(?:we|our|us|ourselves)\b", body_text))
+
+    data["copy_uses_i_my"] = i_my_count > 3
+    data["copy_uses_we_our"] = we_our_count > 3
+
+    # Scrape team/about page
+    team_urls = []
+    for key in ["team", "about"]:
+        if key in subpages:
+            team_urls.append(subpages[key])
+
+    # Also look for /our-coaches, /meet-the-team, etc.
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"].lower()
+        if re.search(r"our.?coaches|meet.?the.?team|our.?team|facilitator", href):
+            full_url = urljoin(base_url, a_tag["href"])
+            if full_url not in team_urls:
+                team_urls.append(full_url)
+
+    coach_names = []
+    for team_url in team_urls[:3]:
+        _, team_soup = fetch_page(team_url)
+        if not team_soup:
+            continue
+        data["team_page_exists"] = True
+
+        # Look for person headshots with names
+        # Method 1: img alt tags with person names
+        for img in team_soup.find_all("img", alt=True):
+            alt = img["alt"].strip()
+            # Name pattern: 2-3 capitalized words, no common non-name words
+            if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+", alt) and not re.search(r"logo|icon|banner|hero|stock|image", alt, re.I):
+                coach_names.append(alt)
+
+        # Method 2: headings near "coach" or "team" sections
+        for heading in team_soup.find_all(["h2", "h3", "h4"]):
+            h_text = heading.get_text(strip=True)
+            if re.match(r"^[A-Z][a-z]+ [A-Z][a-z]+", h_text) and len(h_text) < 40:
+                # Check if near coach/team context
+                parent = heading.parent
+                if parent:
+                    parent_text = parent.get_text().lower()
+                    if re.search(r"coach|team|facilitator|trainer|consultant|advisor", parent_text):
+                        if h_text not in coach_names:
+                            coach_names.append(h_text)
+
+        # Method 3: JSON-LD Person schema
+        for script in team_soup.find_all("script", type="application/ld+json"):
+            try:
+                ld = json.loads(script.string)
+                if isinstance(ld, list):
+                    for item in ld:
+                        if item.get("@type") == "Person" and item.get("name"):
+                            if item["name"] not in coach_names:
+                                coach_names.append(item["name"])
+                elif isinstance(ld, dict):
+                    if ld.get("@type") == "Person" and ld.get("name"):
+                        if ld["name"] not in coach_names:
+                            coach_names.append(ld["name"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    data["team_coach_names"] = coach_names[:20]
+    data["team_coach_count"] = len(coach_names)
+
+    # Check booking page for coach selection
+    booking_has_choice = False
+    for a_tag in soup.find_all("a", href=True):
+        href = a_tag["href"]
+        for tool_patterns in BOOKING_TOOLS.values():
+            for pat in tool_patterns:
+                if re.search(pat, href, re.I):
+                    _, bsoup = fetch_page(urljoin(base_url, href))
+                    if bsoup:
+                        bt = bsoup.get_text(separator=" ", strip=True).lower()
+                        if re.search(r"select.?(?:your|a).?coach|choose.?(?:your|a).?coach|pick.?(?:your|a)", bt):
+                            booking_has_choice = True
+                    break
+
+    # Determine solo vs multi
+    if data["team_coach_count"] >= 2 or booking_has_choice:
+        data["solo_or_multi_coach"] = "Multi-coach"
+    elif data["team_coach_count"] == 1 and data["copy_uses_i_my"]:
+        data["solo_or_multi_coach"] = "Solo"
+    elif data["copy_uses_i_my"] and not data["copy_uses_we_our"]:
+        data["solo_or_multi_coach"] = "Solo"
+    elif data["copy_uses_i_my"] and data["copy_uses_we_our"]:
+        data["solo_or_multi_coach"] = "Looks solo but uses 'we'"
+    elif data["copy_uses_we_our"] and not data["copy_uses_i_my"]:
+        if data["team_page_exists"]:
+            data["solo_or_multi_coach"] = "Multi-coach"
+        else:
+            data["solo_or_multi_coach"] = "Uses 'we' (likely solo positioning as company)"
+    else:
+        data["solo_or_multi_coach"] = "Unknown"
 
     return data
 
@@ -773,21 +997,33 @@ def scrape_website(url):
     subpages = find_subpages(soup, url)
     intel["subpages_found"] = list(subpages.keys())
 
-    # Run all 6 checklist categories
+    # Run all checklist categories
     # 1. Booking infrastructure
     booking = analyze_booking(soup, html, links, url)
     for k, v in booking.items():
         intel[f"booking_{k}"] = v
+
+    # 1b. Paid ads detection (Gap 1)
+    ads = analyze_paid_ads(soup, html)
+    for k, v in ads.items():
+        intel[f"ads_{k}"] = v
 
     # 2. Site performance
     perf = analyze_performance(resp, soup, url)
     for k, v in perf.items():
         intel[f"perf_{k}"] = v
 
-    # 3. Offer details
-    offer = analyze_offer(soup, text, html, subpages)
+    # 3. Offer details (enhanced with Gap 3)
+    offer = analyze_offer(soup, text, html, subpages, url)
     for k, v in offer.items():
         intel[f"offer_{k}"] = v
+
+    # 3b. Solo vs multi-coach (enhanced - Gap 2)
+    coach = analyze_solo_vs_multi(soup, text, html, subpages, url)
+    for k, v in coach.items():
+        intel[f"team_{k}"] = v
+    # Override the old solo_or_multi_coach with enhanced version
+    intel["offer_solo_or_multi_coach"] = coach["solo_or_multi_coach"]
 
     # 4. Audience signals
     audience = analyze_audience(soup, text, html, links, subpages)
