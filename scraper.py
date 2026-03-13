@@ -1708,41 +1708,30 @@ def scrape_website(url):
         intel["mobile_cta_visible_above_fold"] = resp.mobile_cta_visible
         intel["mobile_load_time_seconds"] = resp.mobile_load_time
 
-    # Run all checklist categories
+    # ---- Fast analysis (runs on already-fetched HTML, <1s each) ----
     # 1. Booking infrastructure
     booking = analyze_booking(soup, html, links, url)
     for k, v in booking.items():
         intel[f"booking_{k}"] = v
-    # Override with browser-measured CTA visibility
     if hasattr(resp, "mobile_cta_visible"):
         intel["booking_booking_cta_above_fold"] = resp.mobile_cta_visible
 
-    # 1b. Paid ads detection (Gap 1)
+    # 1b. Paid ads detection
     ads = analyze_paid_ads(soup, html)
     for k, v in ads.items():
         intel[f"ads_{k}"] = v
-
-    # 1c. Facebook Ad Library check
-    fb_ads = check_facebook_ads(url)
-    for k, v in fb_ads.items():
-        intel[f"fbads_{k}"] = v
 
     # 2. Site performance (basic from response)
     perf = analyze_performance(resp, soup, url)
     for k, v in perf.items():
         intel[f"perf_{k}"] = v
 
-    # 2b. Google PageSpeed Insights (real Lighthouse scores)
-    pagespeed = get_pagespeed_insights(url)
-    for k, v in pagespeed.items():
-        intel[k] = v
-
-    # 3. Offer details (enhanced with Gap 3)
+    # 3. Offer details
     offer = analyze_offer(soup, text, html, subpages, url)
     for k, v in offer.items():
         intel[f"offer_{k}"] = v
 
-    # 3b. Solo vs multi-coach (enhanced - Gap 2)
+    # 3b. Solo vs multi-coach
     coach = analyze_solo_vs_multi(soup, text, html, subpages, url)
     for k, v in coach.items():
         intel[f"team_{k}"] = v
@@ -1763,25 +1752,63 @@ def scrape_website(url):
     for k, v in tech_gaps.items():
         intel[f"gaps_{k}"] = v
 
-    # 7. Full site crawl (up to 50 pages)
-    crawl = crawl_site(url, soup)
-    for k, v in crawl.items():
+    # ---- Slow steps (network/browser calls) — run in parallel ----
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    slow_results = {}
+
+    def _run_pagespeed():
+        return ("pagespeed", get_pagespeed_insights(url))
+
+    def _run_fb_ads():
+        return ("fb_ads", check_facebook_ads(url))
+
+    def _run_crawl():
+        return ("crawl", crawl_site(url, soup))
+
+    def _run_social():
+        return ("social", scrape_social_profiles(soup, html))
+
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [
+            executor.submit(_run_pagespeed),
+            executor.submit(_run_fb_ads),
+            executor.submit(_run_crawl),
+            executor.submit(_run_social),
+        ]
+        for future in as_completed(futures):
+            try:
+                key, result = future.result()
+                slow_results[key] = result
+            except Exception:
+                pass
+
+    # Merge PageSpeed results
+    pagespeed = slow_results.get("pagespeed", {})
+    for k, v in pagespeed.items():
         intel[k] = v
 
-    # Override offer prices with crawl-aggregated data (more complete)
-    if crawl["crawl_all_prices"]:
+    # Merge Facebook Ad Library results
+    fb_ads = slow_results.get("fb_ads", {})
+    for k, v in fb_ads.items():
+        intel[f"fbads_{k}"] = v
+
+    # Merge crawl results + override offer data
+    crawl = slow_results.get("crawl", {})
+    for k, v in crawl.items():
+        intel[k] = v
+    if crawl.get("crawl_all_prices"):
         intel["offer_price_points"] = crawl["crawl_all_prices"]
         intel["offer_price_range"] = crawl["crawl_price_range"]
-    if crawl["crawl_all_emails"]:
+    if crawl.get("crawl_all_emails"):
         intel["all_emails_found"] = crawl["crawl_all_emails"]
-    if crawl["crawl_all_phones"]:
+    if crawl.get("crawl_all_phones"):
         intel["all_phones_found"] = crawl["crawl_all_phones"]
-    if crawl["crawl_total_testimonials"] > intel.get("audience_testimonial_count", 0):
+    if crawl.get("crawl_total_testimonials", 0) > intel.get("audience_testimonial_count", 0):
         intel["audience_testimonial_count"] = crawl["crawl_total_testimonials"]
 
-    # 8. Social media profile scraping
-    social = scrape_social_profiles(soup, html)
-    # Flatten nested social_profiles dict into individual keys
+    # Merge social media results
+    social = slow_results.get("social", {})
     profiles = social.pop("social_profiles", {})
     for platform, profile_data in profiles.items():
         intel[f"social_{platform}_url"] = profile_data.get("url", "")
@@ -1793,7 +1820,7 @@ def scrape_website(url):
     for k, v in social.items():
         intel[f"social_{k}"] = v
 
-    # 9. AI-powered analysis (must run last — needs all other data)
+    # ---- AI analysis (must run last — needs all other data) ----
     if HAS_CLAUDE and ANTHROPIC_API_KEY:
         ai = generate_ai_analysis(intel)
         for k, v in ai.items():
