@@ -430,6 +430,47 @@
         .result-value.good { color: #34d399; }
         .result-value.bad { color: #f87171; }
         .result-value.warn { color: #fbbf24; }
+
+        /* Health check panel */
+        .health-bar {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 24px;
+            padding: 16px 20px;
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            align-items: center;
+        }
+
+        .health-bar .health-title {
+            font-size: 13px;
+            font-weight: 600;
+            color: #666;
+            margin-right: 8px;
+        }
+
+        .health-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: 8px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: default;
+        }
+
+        .health-chip.ok { background: #0a2e1a; color: #34d399; }
+        .health-chip.fail { background: #2e0a0a; color: #f87171; }
+        .health-chip .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+        }
+        .health-chip.ok .dot { background: #34d399; }
+        .health-chip.fail .dot { background: #f87171; }
     </style>
 </head>
 <body>
@@ -438,6 +479,12 @@
             <h1>Lead Enrichment Scraper</h1>
             <p>Upload your Apollo CSV and enrich leads with website intelligence</p>
         </header>
+
+        <!-- Health Check Bar -->
+        <div class="health-bar" id="health-bar">
+            <span class="health-title">Services:</span>
+            <span class="health-chip" style="background:#1a1a1a; color:#555;">Checking...</span>
+        </div>
 
         <!-- Step 1: Upload -->
         <div id="step-upload">
@@ -971,6 +1018,26 @@
             $('#urlInput').value = '';
             showStep('upload');
         });
+
+        // Health check on page load
+        (async function checkHealth() {
+            try {
+                const res = await fetch('/health');
+                const data = await res.json();
+                const bar = $('#health-bar');
+                bar.innerHTML = '<span class="health-title">Services:</span>';
+                for (const [key, check] of Object.entries(data.checks)) {
+                    const chip = document.createElement('span');
+                    chip.className = 'health-chip ' + (check.connected ? 'ok' : 'fail');
+                    chip.title = check.detail;
+                    chip.innerHTML = `<span class="dot"></span>${check.name}`;
+                    bar.appendChild(chip);
+                }
+            } catch (e) {
+                const bar = $('#health-bar');
+                bar.innerHTML = '<span class="health-title">Services:</span><span class="health-chip fail"><span class="dot"></span>Could not reach server</span>';
+            }
+        })();
     </script>
 </body>
 </html>

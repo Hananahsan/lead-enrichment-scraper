@@ -9,7 +9,7 @@ import threading
 from datetime import datetime
 
 from flask import Flask, render_template, request, jsonify, send_file
-from scraper import scrape_website, normalize_url
+from scraper import scrape_website, normalize_url, HAS_PLAYWRIGHT, HAS_CLAUDE, PAGESPEED_API_KEY, ANTHROPIC_API_KEY
 
 import pandas as pd
 
@@ -193,6 +193,78 @@ def status(job_id):
     if job_id not in jobs:
         return jsonify({"error": "Job not found"}), 404
     return jsonify(jobs[job_id])
+
+
+@app.route("/health")
+def health():
+    """Check which services/integrations are connected and working."""
+    checks = {}
+
+    # 1. Playwright (headless browser)
+    checks["playwright"] = {
+        "name": "Playwright (Headless Browser)",
+        "connected": HAS_PLAYWRIGHT,
+        "detail": "Installed" if HAS_PLAYWRIGHT else "Not installed — using requests fallback",
+    }
+
+    # 2. PageSpeed API
+    ps_ok = bool(PAGESPEED_API_KEY)
+    checks["pagespeed"] = {
+        "name": "Google PageSpeed Insights",
+        "connected": ps_ok,
+        "detail": "API key configured" if ps_ok else "No API key — set PAGESPEED_API_KEY",
+    }
+
+    # 3. Anthropic / Claude API
+    claude_ok = HAS_CLAUDE and bool(ANTHROPIC_API_KEY)
+    claude_detail = "Not installed"
+    if HAS_CLAUDE and not ANTHROPIC_API_KEY:
+        claude_detail = "Package installed but no API key — set ANTHROPIC_API_KEY"
+    elif claude_ok:
+        # Quick validation: try to ping the API
+        try:
+            import anthropic
+            client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+            client.models.list(limit=1)
+            claude_detail = "Connected and working"
+        except Exception as e:
+            err = str(e)
+            if "credit balance" in err.lower():
+                claude_detail = "Connected but insufficient credits"
+                claude_ok = False
+            elif "invalid" in err.lower() or "auth" in err.lower():
+                claude_detail = "Invalid API key"
+                claude_ok = False
+            else:
+                claude_detail = f"Error: {err[:100]}"
+                claude_ok = False
+
+    checks["claude"] = {
+        "name": "Claude AI Analysis",
+        "connected": claude_ok,
+        "detail": claude_detail,
+    }
+
+    # 4. Facebook Ad Library (just needs Playwright)
+    checks["facebook_ads"] = {
+        "name": "Facebook Ad Library",
+        "connected": HAS_PLAYWRIGHT,
+        "detail": "Available (uses Playwright)" if HAS_PLAYWRIGHT else "Unavailable — needs Playwright",
+    }
+
+    # 5. Social Media Scraping (needs Playwright)
+    checks["social_media"] = {
+        "name": "Social Media Scraping",
+        "connected": HAS_PLAYWRIGHT,
+        "detail": "Available (uses Playwright)" if HAS_PLAYWRIGHT else "Unavailable — needs Playwright",
+    }
+
+    all_ok = all(c["connected"] for c in checks.values())
+
+    return jsonify({
+        "status": "all_connected" if all_ok else "partial",
+        "checks": checks,
+    })
 
 
 @app.route("/download/<job_id>")
