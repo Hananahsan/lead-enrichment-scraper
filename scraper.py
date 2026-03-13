@@ -1128,6 +1128,226 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
 
 
 # =============================================================================
+# FULL SITE CRAWL
+# =============================================================================
+
+MAX_CRAWL_PAGES = 50
+
+def crawl_site(base_url, soup, max_pages=MAX_CRAWL_PAGES):
+    """Crawl up to max_pages internal pages and aggregate all data."""
+    base_parsed = urlparse(base_url)
+    visited = {base_url}
+    to_visit = []
+    page_data = []
+
+    # Collect all internal links from homepage
+    for a in soup.find_all("a", href=True):
+        full = urljoin(base_url, a["href"])
+        parsed = urlparse(full)
+        clean = parsed._replace(fragment="", query="").geturl()
+        if (parsed.netloc == base_parsed.netloc
+                and clean not in visited
+                and not re.search(r"\.(pdf|jpg|jpeg|png|gif|svg|zip|mp4|mp3|css|js)$", parsed.path, re.I)):
+            to_visit.append(clean)
+            visited.add(clean)
+
+    # Crawl pages
+    crawled = 0
+    all_text = soup.get_text(separator=" ", strip=True)
+    all_emails = set()
+    all_phones = set()
+    all_prices = []
+    all_testimonials = 0
+    all_pages_info = [{"url": base_url, "title": soup.title.string.strip() if soup.title and soup.title.string else ""}]
+    hidden_pages = []
+
+    def crawl_page(page_url):
+        _, page_soup = fetch_page_simple(page_url, timeout=10)
+        if not page_soup:
+            return None
+        return {
+            "url": page_url,
+            "soup": page_soup,
+            "text": page_soup.get_text(separator=" ", strip=True),
+            "html": str(page_soup),
+            "title": page_soup.title.string.strip() if page_soup.title and page_soup.title.string else "",
+        }
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(crawl_page, url): url for url in to_visit[:max_pages]}
+        for future in as_completed(futures):
+            result = future.result()
+            if not result:
+                continue
+            crawled += 1
+            page_soup = result["soup"]
+            page_text = result["text"]
+            page_html = result["html"]
+            page_url = result["url"]
+
+            all_pages_info.append({"url": page_url, "title": result["title"]})
+            all_text += " " + page_text
+
+            # Collect emails
+            for a_tag in page_soup.find_all("a", href=True):
+                if a_tag["href"].startswith("mailto:"):
+                    email = a_tag["href"].replace("mailto:", "").split("?")[0].strip()
+                    if email:
+                        all_emails.add(email)
+            email_pattern = r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}"
+            for e in re.findall(email_pattern, page_text):
+                if not e.endswith((".png", ".jpg", ".gif", ".svg")):
+                    all_emails.add(e)
+
+            # Collect phones
+            phone_matches = re.findall(r"\+?1?[-.\s]?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}", page_text)
+            for m in phone_matches:
+                cleaned = re.sub(r"[^\d+]", "", m)
+                if 7 <= len(cleaned.replace("+", "")) <= 15:
+                    all_phones.add(m.strip())
+
+            # Collect prices
+            prices = re.findall(r"\$[\d,]+(?:\.\d{2})?(?:\s*[/-]\s*\w+)?", page_text)
+            all_prices.extend(prices)
+
+            # Count testimonials
+            blockquotes = page_soup.find_all("blockquote")
+            testimonial_divs = page_soup.find_all(["div", "section"], class_=re.compile(r"testimonial|review|quote", re.I))
+            all_testimonials += max(len(blockquotes), len(testimonial_divs))
+
+            # Find hidden/interesting pages
+            path = urlparse(page_url).path.lower()
+            if re.search(r"thank|confirm|success|welcome|onboard|intake|apply|application|quiz|assessment", path):
+                hidden_pages.append({"url": page_url, "title": result["title"], "type": "hidden/interesting"})
+
+            # Discover more links from this page
+            for a in page_soup.find_all("a", href=True):
+                full = urljoin(page_url, a["href"])
+                parsed = urlparse(full)
+                clean = parsed._replace(fragment="", query="").geturl()
+                if (parsed.netloc == base_parsed.netloc
+                        and clean not in visited
+                        and not re.search(r"\.(pdf|jpg|jpeg|png|gif|svg|zip|mp4|mp3|css|js)$", parsed.path, re.I)):
+                    visited.add(clean)
+                    # We won't crawl these extra links (already hit max), but count them
+
+    # Aggregate price data
+    unique_prices = list(set(all_prices))
+    price_amounts = []
+    for p in unique_prices:
+        num = re.search(r"[\d,]+", p)
+        if num:
+            price_amounts.append(int(num.group().replace(",", "")))
+
+    price_range = "Not visible"
+    if price_amounts:
+        max_p = max(price_amounts)
+        if max_p >= 2000:
+            price_range = "High-ticket ($2K+)"
+        elif max_p >= 500:
+            price_range = "Mid-ticket ($500-$2K)"
+        else:
+            price_range = "Low-ticket (under $500)"
+
+    return {
+        "crawl_pages_found": len(visited),
+        "crawl_pages_scraped": crawled + 1,  # +1 for homepage
+        "crawl_all_emails": list(all_emails),
+        "crawl_all_phones": list(all_phones),
+        "crawl_all_prices": unique_prices[:20],
+        "crawl_price_range": price_range,
+        "crawl_total_testimonials": all_testimonials,
+        "crawl_hidden_pages": hidden_pages,
+        "crawl_site_map": all_pages_info,
+        "crawl_full_text_length": len(all_text),
+    }
+
+
+# =============================================================================
+# FACEBOOK AD LIBRARY CHECK
+# =============================================================================
+
+def check_facebook_ads(url):
+    """Check Facebook Ad Library for active ads on this domain."""
+    data = {
+        "fb_ads_found": False,
+        "fb_ads_count": 0,
+        "fb_ads_status": "Not checked",
+        "fb_ads_details": [],
+    }
+
+    domain = urlparse(url).netloc.replace("www.", "")
+
+    try:
+        # Method 1: Search Facebook Ad Library page for the domain
+        ad_library_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={domain}&search_type=keyword_unordered"
+
+        if HAS_PLAYWRIGHT:
+            try:
+                with sync_playwright() as p:
+                    browser = p.chromium.launch(headless=True)
+                    page = browser.new_page()
+                    page.goto(ad_library_url, wait_until="domcontentloaded", timeout=20000)
+                    page.wait_for_timeout(5000)
+
+                    content = page.content()
+                    page_text = page.inner_text("body") if page.query_selector("body") else ""
+
+                    # Check for ad results
+                    # Look for "About X results" or ad cards
+                    results_match = re.search(r"(\d+)\s*results?", page_text, re.I)
+                    no_results = re.search(r"no\s*results|didn.?t\s*find|0\s*results", page_text, re.I)
+
+                    if no_results:
+                        data["fb_ads_found"] = False
+                        data["fb_ads_status"] = "No active ads found"
+                    elif results_match:
+                        count = int(results_match.group(1))
+                        if count > 0:
+                            data["fb_ads_found"] = True
+                            data["fb_ads_count"] = count
+                            data["fb_ads_status"] = f"{count} active ad(s) found"
+                        else:
+                            data["fb_ads_status"] = "No active ads found"
+                    else:
+                        # Look for ad card elements
+                        ad_cards = page.query_selector_all('[class*="ad"], [data-testid*="ad"]')
+                        if ad_cards and len(ad_cards) > 0:
+                            data["fb_ads_found"] = True
+                            data["fb_ads_count"] = len(ad_cards)
+                            data["fb_ads_status"] = f"~{len(ad_cards)} ad(s) detected"
+                        else:
+                            data["fb_ads_status"] = "Could not determine (page structure changed)"
+
+                    # Try to extract ad details
+                    if data["fb_ads_found"]:
+                        # Get first few ad texts
+                        ad_elements = page.query_selector_all('[class*="ad-card"], [class*="_7jyr"]')
+                        for i, el in enumerate(ad_elements[:3]):
+                            try:
+                                ad_text = el.inner_text()[:200]
+                                data["fb_ads_details"].append(ad_text)
+                            except Exception:
+                                pass
+
+                    browser.close()
+            except Exception:
+                data["fb_ads_status"] = "Check failed (browser error)"
+        else:
+            # Without Playwright, try a simple heuristic check via the website itself
+            # Check if site has Facebook Pixel (already done in ads analysis)
+            data["fb_ads_status"] = "Requires headless browser (Playwright not available)"
+
+        # Add the Ad Library link for manual checking
+        data["fb_ads_library_url"] = ad_library_url
+
+    except Exception:
+        data["fb_ads_status"] = "Check failed"
+
+    return data
+
+
+# =============================================================================
 # FIND SUBPAGES
 # =============================================================================
 
@@ -1203,6 +1423,11 @@ def scrape_website(url):
     for k, v in ads.items():
         intel[f"ads_{k}"] = v
 
+    # 1c. Facebook Ad Library check
+    fb_ads = check_facebook_ads(url)
+    for k, v in fb_ads.items():
+        intel[f"fbads_{k}"] = v
+
     # 2. Site performance (basic from response)
     perf = analyze_performance(resp, soup, url)
     for k, v in perf.items():
@@ -1238,6 +1463,22 @@ def scrape_website(url):
     tech_gaps = analyze_technical_gaps(soup, text, html, resp, links, booking)
     for k, v in tech_gaps.items():
         intel[f"gaps_{k}"] = v
+
+    # 7. Full site crawl (up to 50 pages)
+    crawl = crawl_site(url, soup)
+    for k, v in crawl.items():
+        intel[k] = v
+
+    # Override offer prices with crawl-aggregated data (more complete)
+    if crawl["crawl_all_prices"]:
+        intel["offer_price_points"] = crawl["crawl_all_prices"]
+        intel["offer_price_range"] = crawl["crawl_price_range"]
+    if crawl["crawl_all_emails"]:
+        intel["all_emails_found"] = crawl["crawl_all_emails"]
+    if crawl["crawl_all_phones"]:
+        intel["all_phones_found"] = crawl["crawl_all_phones"]
+    if crawl["crawl_total_testimonials"] > intel.get("audience_testimonial_count", 0):
+        intel["audience_testimonial_count"] = crawl["crawl_total_testimonials"]
 
     return intel
 
