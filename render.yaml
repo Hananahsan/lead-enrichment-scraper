@@ -7,4 +7,6 @@ services:
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
+      - key: PAGESPEED_API_KEY
+        value: AIzaSyCg3RAx-ss516ij84fPWJk08Gc4DhSu3TU
     plan: free
