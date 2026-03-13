@@ -52,7 +52,7 @@ def fetch_page(url, timeout=TIMEOUT):
     try:
         resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
         resp.raise_for_status()
-        soup = BeautifulSoup(resp.text, "lxml")
+        soup = BeautifulSoup(resp.text, "html.parser")
         return resp, soup
     except Exception:
         return None, None
