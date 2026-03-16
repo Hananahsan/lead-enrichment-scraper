@@ -1377,6 +1377,10 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
         "conflicting_ctas": False,
         "cta_count": 0,
         "cta_list": [],
+        "cta_destinations": [],
+        "cta_unique_destinations": 0,
+        "cta_destination_mismatch": False,
+        "cta_mismatch_hook": "",
         "booking_page_no_context": False,
         "technical_issues_summary": [],
     }
@@ -1458,6 +1462,36 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
         data["conflicting_ctas"] = True
         data["technical_issues_summary"].append(f"{len(ctas)} different CTAs competing for attention")
 
+    # CTA destination tracking (Enhancement 5)
+    cta_destinations = []
+    destination_roots = set()
+    for el in soup.find_all(["a", "button"]):
+        el_text = el.get_text(strip=True)
+        href = el.get("href", "")
+        if not href or href.startswith("#") or href.startswith("mailto:") or href.startswith("tel:"):
+            continue
+        if cta_patterns.search(el_text) and len(el_text) < 60:
+            full_url = href if href.startswith("http") else urljoin(resp.url, href)
+            try:
+                parsed_dest = urlparse(full_url)
+                domain = parsed_dest.netloc.replace("www.", "")
+                root = f"{domain}{parsed_dest.path.rstrip('/').split('/')[0] if parsed_dest.path else ''}"
+                destination_roots.add(root)
+                cta_destinations.append({"text": el_text, "url": full_url, "domain": domain})
+            except Exception:
+                pass
+
+    data["cta_destinations"] = cta_destinations[:15]
+    data["cta_unique_destinations"] = len(destination_roots)
+    if len(destination_roots) >= 3:
+        data["cta_destination_mismatch"] = True
+        dest_summary = ", ".join(sorted(destination_roots)[:5])
+        data["cta_mismatch_hook"] = (
+            f"Your homepage sends visitors to {len(destination_roots)} different places — "
+            f"{dest_summary}. That decision fatigue is splitting your conversion."
+        )
+        data["technical_issues_summary"].append(f"CTAs point to {len(destination_roots)} different destinations")
+
     # Booking page context check
     if booking_data.get("booking_links"):
         first_booking = booking_data["booking_links"][0]["url"]
@@ -1476,6 +1510,499 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
 
     if not data["technical_issues_summary"]:
         data["technical_issues_summary"] = ["No major technical issues found"]
+
+    return data
+
+
+# =============================================================================
+# ENHANCEMENT 1: ANTI-SIGNAL DETECTION (Automation Platforms)
+# =============================================================================
+
+def detect_automation_platforms(soup, html):
+    """Detect GoHighLevel, ClickFunnels, Kajabi, etc. — prospects who already solved booking."""
+    data = {
+        "has_gohighlevel": False,
+        "has_clickfunnels": False,
+        "has_kajabi": False,
+        "has_kartra": False,
+        "has_keap_infusionsoft": False,
+        "has_full_automation_platform": False,
+        "automation_platform_name": "",
+    }
+
+    platforms = {
+        "has_gohighlevel": [r"gohighlevel\.com", r"msgsndr\.com", r"highlevel", r"\.myfunnels\.com", r"leadconnectorhq\.com", r"app\.ghl\."],
+        "has_clickfunnels": [r"clickfunnels\.com", r"cf-pages", r"cfimg\.com", r"clickfunnels2\.com"],
+        "has_kajabi": [r"kajabi\.com", r"kajabi-storefronts", r"checkout\.kajabi"],
+        "has_kartra": [r"kartra\.com", r"app\.kartra"],
+        "has_keap_infusionsoft": [r"keap\.com", r"infusionsoft\.com", r"keap-app"],
+    }
+
+    platform_names = {
+        "has_gohighlevel": "GoHighLevel",
+        "has_clickfunnels": "ClickFunnels",
+        "has_kajabi": "Kajabi",
+        "has_kartra": "Kartra",
+        "has_keap_infusionsoft": "Keap/Infusionsoft",
+    }
+
+    for key, patterns in platforms.items():
+        for pattern in patterns:
+            if re.search(pattern, html, re.I):
+                data[key] = True
+                if not data["has_full_automation_platform"]:
+                    data["has_full_automation_platform"] = True
+                    data["automation_platform_name"] = platform_names[key]
+                break
+
+    return data
+
+
+# =============================================================================
+# ENHANCEMENT 7: SCHEMA.ORG / STRUCTURED DATA GAP
+# =============================================================================
+
+def check_structured_data(soup):
+    """Check for Schema.org structured data markup."""
+    data = {
+        "has_schema_markup": False,
+        "schema_types_found": [],
+        "has_business_schema": False,
+        "has_faq_schema": False,
+        "has_review_schema": False,
+        "has_service_schema": False,
+        "schema_gap_hook": "",
+    }
+
+    business_types = {"LocalBusiness", "ProfessionalService", "Organization", "Person",
+                      "EducationalOrganization", "MedicalBusiness", "Physician", "Dentist"}
+    review_types = {"AggregateRating", "Review"}
+    service_types = {"Service", "Product", "Offer", "Course"}
+
+    ld_scripts = soup.find_all("script", {"type": "application/ld+json"})
+    all_types = set()
+
+    for script in ld_scripts:
+        try:
+            content = script.string or ""
+            parsed = json.loads(content)
+
+            def extract_types(obj):
+                if isinstance(obj, dict):
+                    t = obj.get("@type", "")
+                    if isinstance(t, list):
+                        all_types.update(t)
+                    elif t:
+                        all_types.add(t)
+                    for v in obj.values():
+                        extract_types(v)
+                elif isinstance(obj, list):
+                    for item in obj:
+                        extract_types(item)
+
+            extract_types(parsed)
+        except (json.JSONDecodeError, TypeError):
+            continue
+
+    if all_types:
+        data["has_schema_markup"] = True
+        data["schema_types_found"] = sorted(all_types)
+        data["has_business_schema"] = bool(all_types & business_types)
+        data["has_faq_schema"] = "FAQPage" in all_types
+        data["has_review_schema"] = bool(all_types & review_types)
+        data["has_service_schema"] = bool(all_types & service_types)
+
+    return data
+
+
+# =============================================================================
+# ENHANCEMENT 6: REDIRECT CHAIN DEPTH ON BOOKING CTAs
+# =============================================================================
+
+def check_booking_redirects(booking_data):
+    """Check how many redirects the booking CTA goes through."""
+    data = {
+        "booking_redirect_count": 0,
+        "booking_redirect_chain": [],
+        "booking_redirect_excessive": False,
+        "booking_redirect_hook": "",
+    }
+
+    links = booking_data.get("booking_links", [])
+    if not links:
+        return data
+
+    target_url = links[0].get("url", "")
+    if not target_url or target_url.startswith("#"):
+        return data
+
+    try:
+        resp = requests.get(target_url, headers=HEADERS, timeout=10, allow_redirects=True)
+        chain = [r.url for r in resp.history] + [resp.url]
+        data["booking_redirect_count"] = len(resp.history)
+        data["booking_redirect_chain"] = chain
+
+        if len(resp.history) >= 2:
+            data["booking_redirect_excessive"] = True
+            count = len(resp.history)
+            data["booking_redirect_hook"] = (
+                f"Your 'Book a Call' link goes through {count} redirects before reaching "
+                f"your scheduling page — that adds ~{count}s of dead loading time where visitors drop off."
+            )
+    except Exception:
+        pass
+
+    return data
+
+
+# =============================================================================
+# ENHANCEMENT 4: FORM FIELD COUNTER
+# =============================================================================
+
+def count_form_fields(soup, html, subpages, base_url):
+    """Count form fields across homepage and key subpages to detect high-friction forms."""
+    data = {
+        "forms_found": 0,
+        "longest_form_fields": 0,
+        "longest_form_url": "",
+        "longest_form_type": "",
+        "forms_detail": [],
+        "high_friction_form": False,
+        "form_friction_hook": "",
+    }
+
+    def _analyze_forms(page_soup, page_url):
+        """Analyze all forms on a page and return list of form info dicts."""
+        results = []
+        for form in page_soup.find_all("form"):
+            inputs = form.find_all("input")
+            field_count = 0
+            for inp in inputs:
+                input_type = (inp.get("type") or "text").lower()
+                if input_type not in ("hidden", "submit", "button", "reset", "image"):
+                    field_count += 1
+            field_count += len(form.find_all("select"))
+            field_count += len(form.find_all("textarea"))
+
+            if field_count == 0:
+                continue
+
+            # Determine form type
+            form_text = (form.get("action", "") + " " + form.get("id", "") + " " +
+                         " ".join(form.get("class", [])) + " " + form.get_text(" ", strip=True)[:200]).lower()
+            if any(kw in form_text for kw in ["contact", "message", "inquiry", "get in touch"]):
+                form_type = "contact"
+            elif any(kw in form_text for kw in ["apply", "application"]):
+                form_type = "application"
+            elif any(kw in form_text for kw in ["intake", "onboard"]):
+                form_type = "intake"
+            elif any(kw in form_text for kw in ["book", "schedule", "calendar"]):
+                form_type = "booking"
+            else:
+                form_type = "unknown"
+
+            results.append({
+                "url": page_url,
+                "field_count": field_count,
+                "form_type": form_type,
+            })
+        return results
+
+    # Analyze homepage forms
+    all_forms = _analyze_forms(soup, base_url)
+
+    # Check key subpages
+    form_pages = ["/apply", "/application", "/intake", "/contact", "/work-with-me", "/get-started"]
+    parsed = urlparse(base_url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    pages_checked = 0
+    for path in form_pages:
+        if pages_checked >= 5:
+            break
+        page_url = f"{base}{path}"
+        try:
+            _, page_soup = fetch_page_simple(page_url, timeout=8)
+            if page_soup:
+                all_forms.extend(_analyze_forms(page_soup, page_url))
+                pages_checked += 1
+        except Exception:
+            continue
+
+    # Also check subpages from find_subpages
+    for sp_type, sp_url in subpages.items():
+        if pages_checked >= 5:
+            break
+        if any(kw in sp_type for kw in ["apply", "contact", "intake", "work"]):
+            try:
+                _, page_soup = fetch_page_simple(sp_url, timeout=8)
+                if page_soup:
+                    all_forms.extend(_analyze_forms(page_soup, sp_url))
+                    pages_checked += 1
+            except Exception:
+                continue
+
+    data["forms_found"] = len(all_forms)
+    data["forms_detail"] = all_forms
+
+    if all_forms:
+        longest = max(all_forms, key=lambda f: f["field_count"])
+        data["longest_form_fields"] = longest["field_count"]
+        data["longest_form_url"] = longest["url"]
+        data["longest_form_type"] = longest["form_type"]
+
+        if longest["field_count"] >= 8:
+            data["high_friction_form"] = True
+            ft = longest["form_type"]
+            fc = longest["field_count"]
+            if fc >= 12:
+                data["form_friction_hook"] = (
+                    f"Your {ft} form asks for {fc} pieces of information before someone "
+                    f"can even talk to you — I'd estimate that's filtering out 40-60% of interested prospects."
+                )
+            else:
+                data["form_friction_hook"] = (
+                    f"Your {ft} form has {fc} fields — completion rates typically drop "
+                    f"~10% per field after 5. That's a lot of interested leads abandoning before they finish."
+                )
+
+    return data
+
+
+# =============================================================================
+# ENHANCEMENT 3: BOOKING PAGE BRANDING CHECK
+# =============================================================================
+
+def check_booking_page_branding(booking_data, base_url):
+    """Check if the booking page (Calendly, etc.) has custom branding or is fully default."""
+    data = {
+        "booking_page_fetched": False,
+        "booking_page_url": "",
+        "booking_page_is_branded": False,
+        "booking_page_has_description": False,
+        "booking_page_has_photo": False,
+        "booking_page_has_custom_colors": False,
+        "booking_page_word_count": 0,
+        "booking_page_branding_score": "",
+        "booking_page_hook": "",
+    }
+
+    tool = booking_data.get("booking_tool", "")
+    if not tool or tool in ("None detected", "Contact form"):
+        return data
+
+    links = booking_data.get("booking_links", [])
+    if not links:
+        return data
+
+    # Find the first external booking link
+    booking_url = ""
+    for link in links:
+        href = link.get("url", "")
+        if any(re.search(pat, href, re.I) for pats in BOOKING_TOOLS.values() for pat in pats):
+            booking_url = href
+            break
+
+    if not booking_url:
+        return data
+
+    data["booking_page_url"] = booking_url
+
+    try:
+        _, bp_soup = fetch_page_simple(booking_url, timeout=10)
+        if not bp_soup:
+            return data
+
+        data["booking_page_fetched"] = True
+        bp_text = bp_soup.get_text(separator=" ", strip=True)
+        data["booking_page_word_count"] = len(bp_text.split())
+
+        # Check for description (>20 words of content)
+        if data["booking_page_word_count"] > 20:
+            data["booking_page_has_description"] = True
+
+        # Check for profile photo/avatar
+        for img in bp_soup.find_all("img"):
+            alt = (img.get("alt", "") or "").lower()
+            src = (img.get("src", "") or "").lower()
+            if any(kw in alt for kw in ["photo", "avatar", "profile", "headshot", "portrait"]):
+                data["booking_page_has_photo"] = True
+                break
+            if any(kw in src for kw in ["avatar", "profile", "photo", "headshot"]):
+                data["booking_page_has_photo"] = True
+                break
+
+        # Check for custom colors (inline styles with color values)
+        bp_html = str(bp_soup)
+        color_matches = re.findall(r'(?:background-color|color)\s*:\s*#[0-9a-fA-F]{3,6}', bp_html)
+        if len(color_matches) >= 2:
+            data["booking_page_has_custom_colors"] = True
+
+        # Branding score
+        brand_signals = sum([
+            data["booking_page_has_description"],
+            data["booking_page_has_photo"],
+            data["booking_page_has_custom_colors"],
+        ])
+
+        if brand_signals == 0 and data["booking_page_word_count"] < 20:
+            data["booking_page_branding_score"] = "default"
+            data["booking_page_hook"] = (
+                f"Your {tool} page is completely default — no photo, no description of what the "
+                f"call covers. Visitors land on a blank scheduling widget with zero context about "
+                f"why they should show up."
+            )
+        elif brand_signals <= 2:
+            data["booking_page_branding_score"] = "partially_branded"
+            missing = []
+            if not data["booking_page_has_photo"]:
+                missing.append("a profile photo")
+            if not data["booking_page_has_description"]:
+                missing.append("a description of the call")
+            if not data["booking_page_has_custom_colors"]:
+                missing.append("custom branding colors")
+            missing_str = " and ".join(missing)
+            data["booking_page_hook"] = (
+                f"Your booking page has some customization but is still missing {missing_str} — "
+                f"that gap between your polished site and a bare scheduling page costs you show-ups."
+            )
+        else:
+            data["booking_page_branding_score"] = "well_branded"
+
+        data["booking_page_is_branded"] = brand_signals >= 2
+
+    except Exception:
+        pass
+
+    return data
+
+
+# =============================================================================
+# ENHANCEMENT 2: CONFIRMATION/THANK-YOU PAGE QUALITY AUDIT
+# =============================================================================
+
+def audit_confirmation_pages(crawl_data, base_url):
+    """Audit confirmation/thank-you pages for quality — thin pages drive no-shows."""
+    data = {
+        "confirmation_pages_found": 0,
+        "confirmation_pages": [],
+        "worst_confirmation_quality": "none_found",
+        "confirmation_hook": "",
+    }
+
+    hidden_pages = crawl_data.get("crawl_hidden_pages", [])
+    if not hidden_pages:
+        return data
+
+    confirm_pages = []
+    for page in hidden_pages:
+        page_url = page if isinstance(page, str) else page.get("url", "")
+        if not page_url:
+            continue
+        if re.search(r"thank|confirm|success|welcome", page_url, re.I):
+            confirm_pages.append(page_url)
+
+    # Also manually check common confirmation paths
+    parsed = urlparse(base_url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    for path in ["/thank-you", "/thanks", "/confirmation", "/success", "/welcome", "/booking-confirmed"]:
+        test_url = f"{base}{path}"
+        if test_url not in confirm_pages:
+            try:
+                resp = requests.head(test_url, headers=HEADERS, timeout=5, allow_redirects=True)
+                if resp.status_code == 200:
+                    confirm_pages.append(test_url)
+            except Exception:
+                continue
+
+    if not confirm_pages:
+        return data
+
+    data["confirmation_pages_found"] = len(confirm_pages)
+    worst_quality = "good"
+
+    for page_url in confirm_pages[:3]:  # Check up to 3
+        page_info = {
+            "url": page_url,
+            "word_count": 0,
+            "has_video": False,
+            "has_what_to_expect": False,
+            "has_calendar_add": False,
+            "has_next_steps": False,
+            "has_branding": False,
+            "quality_score": "",
+        }
+
+        try:
+            _, page_soup = fetch_page_simple(page_url, timeout=8)
+            if not page_soup:
+                continue
+
+            page_text = page_soup.get_text(separator=" ", strip=True)
+            page_html = str(page_soup)
+            page_info["word_count"] = len(page_text.split())
+
+            # Video check
+            if page_soup.find("video") or re.search(r'<iframe[^>]*(?:youtube|vimeo|wistia|loom)', page_html, re.I):
+                page_info["has_video"] = True
+
+            # What to expect
+            if re.search(r"what to expect|before your call|prepare for|here.?s what", page_text, re.I):
+                page_info["has_what_to_expect"] = True
+
+            # Calendar add
+            if re.search(r"\.ics|add to calendar|google\.com/calendar|outlook\.com", page_html, re.I):
+                page_info["has_calendar_add"] = True
+
+            # Next steps
+            if re.search(r"next step|what happens next|here.?s what to do", page_text, re.I):
+                page_info["has_next_steps"] = True
+
+            # Branding
+            logos = page_soup.find_all("img", class_=re.compile(r"logo", re.I))
+            if logos or page_soup.find("img", alt=re.compile(r"logo", re.I)):
+                page_info["has_branding"] = True
+
+            # Quality scoring
+            enhancements = sum([
+                page_info["has_video"],
+                page_info["has_what_to_expect"],
+                page_info["has_next_steps"],
+                page_info["has_calendar_add"],
+            ])
+
+            if page_info["word_count"] < 50 and enhancements == 0:
+                page_info["quality_score"] = "generic"
+            elif page_info["word_count"] > 150 and enhancements >= 2:
+                page_info["quality_score"] = "good"
+            else:
+                page_info["quality_score"] = "basic"
+
+            # Track worst quality
+            quality_rank = {"generic": 0, "basic": 1, "good": 2}
+            if quality_rank.get(page_info["quality_score"], 2) < quality_rank.get(worst_quality, 2):
+                worst_quality = page_info["quality_score"]
+
+        except Exception:
+            continue
+
+        data["confirmation_pages"].append(page_info)
+
+    data["worst_confirmation_quality"] = worst_quality
+
+    # Hook generation
+    if worst_quality == "generic":
+        worst_page = next((p for p in data["confirmation_pages"] if p["quality_score"] == "generic"), None)
+        wc = worst_page["word_count"] if worst_page else 0
+        data["confirmation_hook"] = (
+            f"Your confirmation page after booking is just {wc} words with no context about "
+            f"what the call is for — that's where 30-50% of no-shows start."
+        )
+    elif worst_quality == "basic":
+        data["confirmation_hook"] = (
+            "Your post-booking page is missing a pre-call sequence — no video, no 'what to expect', "
+            "no prep steps. That gap drives no-shows."
+        )
 
     return data
 
@@ -1928,6 +2455,15 @@ def generate_ai_analysis(intel):
     summary_parts.append(f"Social profiles: {intel.get('social_social_summary', 'N/A')}")
     summary_parts.append(f"Total social followers: {intel.get('social_social_total_followers', 'N/A')}")
 
+    # New enhancement fields
+    summary_parts.append(f"Automation platform (anti-signal): {intel.get('antisignal_automation_platform_name', 'None')} (disqualified: {intel.get('antisignal_has_full_automation_platform', False)})")
+    summary_parts.append(f"Confirmation page quality: {intel.get('confirmation_worst_confirmation_quality', 'Not checked')}")
+    summary_parts.append(f"Booking page branding: {intel.get('bookingbrand_booking_page_branding_score', 'Not checked')}")
+    summary_parts.append(f"Longest form fields: {intel.get('forms_longest_form_fields', 'N/A')} fields")
+    summary_parts.append(f"CTA destination mismatch: {intel.get('gaps_cta_destination_mismatch', False)} ({intel.get('gaps_cta_unique_destinations', 0)} unique destinations)")
+    summary_parts.append(f"Booking redirect hops: {intel.get('redirects_booking_redirect_count', 0)}")
+    summary_parts.append(f"Schema markup: {intel.get('schema_has_business_schema', 'N/A')}")
+
     site_data = "\n".join(summary_parts)
 
     prompt = f"""You are a coaching business analyst. Analyze this website audit data for a coaching/consulting business and provide a concise, actionable report.
@@ -1944,7 +2480,7 @@ POSITIONING GAPS:
 [Specific weaknesses in their website, booking flow, offer clarity, or marketing that are costing them clients]
 
 OUTREACH HOOKS:
-[3 specific, personalized cold email hooks based on the gaps found - things that would get this coach's attention because they address real problems on their site. Write these as actual email opening lines.]
+[3 specific, personalized cold email hooks based on the gaps found - things that would get this coach's attention because they address real problems on their site. Write these as actual email opening lines. Consider these signals when generating hooks: automation platform anti-signals, confirmation page quality, booking page branding gaps, high-friction forms, CTA destination mismatches, booking redirect chains, and missing schema markup. Prioritize hooks from broken conversion mechanisms over design observations.]
 
 OVERALL SCORE:
 [Rate the site X/10 with a one-line justification]"""
@@ -2082,10 +2618,35 @@ def scrape_website(url):
     for k, v in timing.items():
         intel[f"timing_{k}"] = v
 
-    # 6. Technical gaps
+    # 6. Technical gaps (includes Enhancement 5: CTA destination mismatch)
     tech_gaps = analyze_technical_gaps(soup, text, html, resp, links, booking)
     for k, v in tech_gaps.items():
         intel[f"gaps_{k}"] = v
+
+    # 7. Automation platform detection (Enhancement 1: anti-signal)
+    autoplatform = detect_automation_platforms(soup, html)
+    for k, v in autoplatform.items():
+        intel[f"antisignal_{k}"] = v
+
+    # 8. Schema.org structured data (Enhancement 7)
+    schema = check_structured_data(soup)
+    for k, v in schema.items():
+        intel[f"schema_{k}"] = v
+
+    # 9. Form field analysis (Enhancement 4)
+    form_fields = count_form_fields(soup, html, subpages, url)
+    for k, v in form_fields.items():
+        intel[f"forms_{k}"] = v
+
+    # 10. Booking page branding (Enhancement 3)
+    booking_brand = check_booking_page_branding(booking, url)
+    for k, v in booking_brand.items():
+        intel[f"bookingbrand_{k}"] = v
+
+    # 11. Booking CTA redirect chain (Enhancement 6)
+    booking_redirects = check_booking_redirects(booking)
+    for k, v in booking_redirects.items():
+        intel[f"redirects_{k}"] = v
 
     # ---- Slow steps (network/browser calls) — run in parallel ----
     from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -2145,6 +2706,21 @@ def scrape_website(url):
         intel["all_phones_found"] = crawl["crawl_all_phones"]
     if crawl.get("crawl_total_testimonials", 0) > intel.get("audience_testimonial_count", 0):
         intel["audience_testimonial_count"] = crawl["crawl_total_testimonials"]
+
+    # Confirmation page quality audit (Enhancement 2 — depends on crawl data)
+    if crawl:
+        conf_audit = audit_confirmation_pages(crawl, url)
+        for k, v in conf_audit.items():
+            intel[f"confirmation_{k}"] = v
+
+    # Schema gap hook (needs audience data from above)
+    if not intel.get("schema_has_business_schema") and (
+        intel.get("audience_social_proof_testimonials") or intel.get("audience_social_proof_media_mentions")
+    ):
+        intel["schema_schema_gap_hook"] = (
+            "Your site has no structured data markup — Google can't properly identify your business, "
+            "your reviews, or your services. That's invisible SEO credibility you're leaving on the table."
+        )
 
     # Merge social media results
     social = slow_results.get("social", {})
