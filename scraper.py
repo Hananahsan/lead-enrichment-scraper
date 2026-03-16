@@ -29,9 +29,26 @@ if _env_path.exists():
                 _key, _val = _line.split("=", 1)
                 os.environ.setdefault(_key.strip(), _val.strip())
 
+import warnings
 import pandas as pd
 import requests
-from bs4 import BeautifulSoup
+from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
+
+warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
+
+from dateutil import parser as dateutil_parser
+
+try:
+    import feedparser
+    HAS_FEEDPARSER = True
+except ImportError:
+    HAS_FEEDPARSER = False
+
+try:
+    import whois
+    HAS_WHOIS = True
+except ImportError:
+    HAS_WHOIS = False
 
 try:
     from playwright.sync_api import sync_playwright
@@ -939,34 +956,128 @@ def analyze_audience(soup, text, html, links, subpages):
 # =============================================================================
 
 def analyze_timing(soup, text, html):
-    """Checklist category 5: Timing/recency signals."""
+    """Checklist category 5: Timing/recency signals (local HTML analysis)."""
     data = {
         "copyright_year": "",
         "site_looks_recent": "Unknown",
         "now_enrolling_banner": False,
         "new_program_signals": [],
-        "recent_press_on_site": False,
         "hiring_indicators": False,
         "design_assessment": "",
+        # Enhanced fields
+        "newest_content_date": "",
+        "content_dates_found": [],
+        "upcoming_events": [],
+        "press_mentions": [],
     }
 
-    current_year = datetime.now().year
+    now = datetime.now()
+    current_year = now.year
 
-    # Copyright year
+    # ---- Copyright year ----
     copyright_match = re.search(r"(?:©|\(c\)|copyright)\s*(\d{4})", text, re.I)
     if copyright_match:
         year = int(copyright_match.group(1))
         data["copyright_year"] = str(year)
-        if year >= current_year - 1:
-            data["site_looks_recent"] = "Yes (copyright current)"
-        elif year >= current_year - 3:
-            data["site_looks_recent"] = "Possibly (copyright within 3 years)"
-        else:
-            data["site_looks_recent"] = f"Outdated (copyright {year})"
     else:
         data["copyright_year"] = "Not found"
 
-    # Enrolling / launch banners
+    # ---- Extract real dates from content ----
+    found_dates = []
+
+    # 1. <time> elements with datetime attr
+    for time_el in soup.find_all("time"):
+        dt_str = time_el.get("datetime", "") or time_el.get_text(strip=True)
+        if dt_str:
+            try:
+                dt = dateutil_parser.parse(dt_str, fuzzy=True, dayfirst=False)
+                if 2015 <= dt.year <= current_year + 2:
+                    found_dates.append(dt)
+            except (ValueError, OverflowError):
+                pass
+
+    # 2. Schema.org datePublished / dateModified
+    for meta in soup.find_all("meta"):
+        prop = meta.get("property", "") or meta.get("itemprop", "")
+        if prop in ("datePublished", "dateModified", "article:published_time", "article:modified_time"):
+            try:
+                dt = dateutil_parser.parse(meta.get("content", ""), fuzzy=True, dayfirst=False)
+                if 2015 <= dt.year <= current_year + 2:
+                    found_dates.append(dt)
+            except (ValueError, OverflowError):
+                pass
+
+    # 3. Common blog date class patterns
+    date_selectors = [
+        "[class*='date']", "[class*='publish']", "[class*='posted']",
+        "[class*='entry-date']", "[class*='post-meta']", "[class*='blog-date']",
+        "[itemprop='datePublished']", "[itemprop='dateCreated']",
+    ]
+    for selector in date_selectors:
+        for el in soup.select(selector)[:10]:
+            txt = el.get_text(strip=True)
+            if txt and len(txt) < 80:
+                try:
+                    dt = dateutil_parser.parse(txt, fuzzy=True, dayfirst=False)
+                    if 2015 <= dt.year <= current_year + 2:
+                        found_dates.append(dt)
+                except (ValueError, OverflowError):
+                    pass
+
+    # 4. Regex for inline dates near blog/article context
+    date_patterns = [
+        r"(\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{1,2},?\s+\d{4}\b)",
+        r"(\b\d{1,2}\s+(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\.?\s+\d{4}\b)",
+        r"(\b\d{4}-\d{2}-\d{2}\b)",
+        r"(\b\d{1,2}/\d{1,2}/\d{4}\b)",
+    ]
+    for pattern in date_patterns:
+        for match in re.finditer(pattern, text, re.I):
+            try:
+                dt = dateutil_parser.parse(match.group(1), fuzzy=True, dayfirst=False)
+                if 2015 <= dt.year <= current_year + 2:
+                    found_dates.append(dt)
+            except (ValueError, OverflowError):
+                pass
+
+    # Deduplicate and sort dates
+    unique_dates = sorted(set(d.strftime("%Y-%m-%d") for d in found_dates), reverse=True)
+    data["content_dates_found"] = unique_dates[:10]
+    if unique_dates:
+        data["newest_content_date"] = unique_dates[0]
+
+    # ---- Upcoming events (future dates near event keywords) ----
+    event_keywords = re.compile(
+        r"webinar|workshop|summit|masterclass|live.?session|conference|"
+        r"bootcamp|retreat|virtual.?event|group.?call|q\s*&\s*a|office.?hours",
+        re.I,
+    )
+    for date_obj in found_dates:
+        if date_obj.date() >= now.date():
+            # Find surrounding context
+            date_str = date_obj.strftime("%b %d, %Y")
+            # Search for event keywords near this date in text
+            for match in event_keywords.finditer(text):
+                start = max(0, match.start() - 200)
+                end = min(len(text), match.end() + 200)
+                context = text[start:end]
+                if date_obj.strftime("%Y") in context or date_obj.strftime("%B") in context or date_obj.strftime("%b") in context:
+                    event_name = match.group(0).strip()
+                    event_entry = f"{date_str} — {event_name}"
+                    if event_entry not in data["upcoming_events"]:
+                        data["upcoming_events"].append(event_entry)
+
+    # Also detect future dates standalone
+    for date_obj in found_dates:
+        if date_obj.date() > now.date():
+            date_str = date_obj.strftime("%b %d, %Y")
+            entry = f"{date_str} — upcoming date found"
+            if not any(date_str in e for e in data["upcoming_events"]):
+                data["upcoming_events"].append(entry)
+
+    data["upcoming_events"] = data["upcoming_events"][:5]
+
+    # ---- Enrolling / launch banners ----
     enroll_patterns = re.compile(
         r"now.?enrolling|doors.?open|enrollment.?open|join.?now|launching.?soon|"
         r"new.?cohort|next.?cohort|applications.?open|waitlist|sign.?up.?now|"
@@ -987,40 +1098,264 @@ def analyze_timing(soup, text, html):
     if new_patterns.search(text):
         matches = new_patterns.findall(text)
         data["new_program_signals"].extend(m.strip() for m in matches[:5])
-
     data["new_program_signals"] = list(set(data["new_program_signals"]))
 
-    # Recent press on site
-    recent_year_pattern = re.compile(rf"(?:20(?:2[3-9]|[3-9]\d)).*(?:podcast|interview|feature|article|press|media)", re.I)
-    if recent_year_pattern.search(text):
-        data["recent_press_on_site"] = True
+    # ---- Press mentions with dates ----
+    press_keywords = re.compile(
+        r"(?:featured\s+(?:in|on)|as\s+seen\s+(?:in|on)|press|media|interview|podcast|article|"
+        r"published\s+(?:in|on)|quoted\s+(?:in|on)|appeared\s+(?:in|on))",
+        re.I,
+    )
+    press_outlets = re.compile(
+        r"Forbes|Inc\b|Entrepreneur|Business\s*Insider|Fast\s*Company|NYT|New\s*York\s*Times|"
+        r"Wall\s*Street\s*Journal|WSJ|BBC|CNN|CNBC|TechCrunch|Huffington|Medium|"
+        r"USA\s*Today|Reuters|Bloomberg|Yahoo|GQ|Vogue|Cosmopolitan|TIME",
+        re.I,
+    )
+    mentions = []
+    for match in press_keywords.finditer(text):
+        start = max(0, match.start() - 50)
+        end = min(len(text), match.end() + 150)
+        context = text[start:end].strip()
+        # Try to find a year in this context
+        year_match = re.search(r"\b(20[12]\d)\b", context)
+        # Try to find an outlet name
+        outlet_match = press_outlets.search(context)
+        if outlet_match:
+            outlet = outlet_match.group(0)
+            year = year_match.group(1) if year_match else ""
+            entry = f"{year} — {outlet}" if year else outlet
+            if entry not in mentions:
+                mentions.append(entry)
 
-    # Hiring indicators
+    # Also scan for outlet names directly
+    for match in press_outlets.finditer(text):
+        start = max(0, match.start() - 80)
+        end = min(len(text), match.end() + 80)
+        context = text[start:end]
+        outlet = match.group(0)
+        year_match = re.search(r"\b(20[12]\d)\b", context)
+        year = year_match.group(1) if year_match else ""
+        entry = f"{year} — {outlet}" if year else outlet
+        if entry not in mentions:
+            mentions.append(entry)
+
+    data["press_mentions"] = mentions[:10]
+
+    # ---- Hiring indicators (more precise) ----
     hiring_patterns = re.compile(
-        r"we.?re.?hiring|join.?our.?team|career|open.?position|job.?opening|"
-        r"apply.?to.?work|looking.?for.?a|now.?hiring|work.?with.?us",
+        r"we.?re.?hiring|join.?our.?team|open.?position|job.?opening|"
+        r"now.?hiring|careers?\s+page|view.?open.?roles",
         re.I,
     )
     if hiring_patterns.search(text):
         data["hiring_indicators"] = True
+    # Also check for careers/jobs links
+    for a in soup.find_all("a", href=True):
+        href = a["href"].lower()
+        if any(kw in href for kw in ["/careers", "/jobs", "greenhouse.io", "lever.co", "workable.com"]):
+            data["hiring_indicators"] = True
+            break
 
-    # Design assessment heuristics
+    # ---- Design assessment ----
     design_signals = []
-    # Modern frameworks
-    if re.search(r"tailwind|_next/|webflow", html, re.I):
-        design_signals.append("modern framework detected")
-    # Old jQuery/bootstrap
+    if re.search(r"tailwind|_next/|webflow|framer|squarespace|wix|shopify", html, re.I):
+        if re.search(r"_next/", html):
+            design_signals.append("Next.js")
+        if re.search(r"webflow", html, re.I):
+            design_signals.append("Webflow")
+        if re.search(r"framer", html, re.I):
+            design_signals.append("Framer")
+        if re.search(r"squarespace", html, re.I):
+            design_signals.append("Squarespace")
+        if re.search(r"wix", html, re.I):
+            design_signals.append("Wix")
+        if re.search(r"shopify", html, re.I):
+            design_signals.append("Shopify")
+        if re.search(r"tailwind", html, re.I):
+            design_signals.append("Tailwind CSS")
+    if re.search(r"wordpress|wp-content", html, re.I):
+        design_signals.append("WordPress")
     if re.search(r"jquery-1\.|bootstrap-[23]", html, re.I):
-        design_signals.append("older framework version")
-    # Responsive design
+        design_signals.append("Older framework version")
     if soup.find("meta", attrs={"name": "viewport"}):
-        design_signals.append("responsive")
-    # Animations/modern CSS
-    if re.search(r"animation|transform|transition|@keyframes|gsap|aos", html, re.I):
-        design_signals.append("uses animations")
+        design_signals.append("Responsive")
+    if re.search(r"@keyframes|gsap|aos|framer-motion", html, re.I):
+        design_signals.append("Animations")
 
-    if design_signals:
-        data["design_assessment"] = ", ".join(design_signals)
+    data["design_assessment"] = ", ".join(design_signals) if design_signals else "Basic HTML"
+
+    # ---- Overall recency assessment (local signals only — network signals added later) ----
+    recency_score = 0
+    if copyright_match:
+        year = int(copyright_match.group(1))
+        if year >= current_year:
+            recency_score += 2
+        elif year >= current_year - 1:
+            recency_score += 1
+    if data["newest_content_date"]:
+        try:
+            newest = dateutil_parser.parse(data["newest_content_date"])
+            days_ago = (now - newest).days
+            if days_ago <= 30:
+                recency_score += 3
+            elif days_ago <= 90:
+                recency_score += 2
+            elif days_ago <= 365:
+                recency_score += 1
+        except (ValueError, OverflowError):
+            pass
+    if data["upcoming_events"]:
+        recency_score += 2
+    if data["now_enrolling_banner"]:
+        recency_score += 1
+
+    if recency_score >= 4:
+        data["site_looks_recent"] = "Yes — actively maintained"
+    elif recency_score >= 2:
+        data["site_looks_recent"] = "Likely recent"
+    elif recency_score >= 1:
+        data["site_looks_recent"] = "Possibly outdated"
+    else:
+        data["site_looks_recent"] = "No recency signals found"
+
+    return data
+
+
+def analyze_timing_network(url, soup):
+    """Timing/recency signals that require network calls (runs in parallel)."""
+    data = {
+        "sitemap_last_updated": "",
+        "sitemap_page_count": 0,
+        "http_last_modified": "",
+        "domain_age_years": "",
+        "domain_created": "",
+        "rss_latest_date": "",
+        "rss_feed_url": "",
+        "rss_post_count": 0,
+    }
+
+    parsed = urlparse(url)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+
+    # ---- 1. Sitemap.xml ----
+    sitemap_urls_to_try = [
+        f"{base}/sitemap.xml",
+        f"{base}/sitemap_index.xml",
+        f"{base}/sitemap/sitemap.xml",
+        f"{base}/wp-sitemap.xml",
+    ]
+    for sitemap_url in sitemap_urls_to_try:
+        try:
+            resp = requests.get(sitemap_url, headers=HEADERS, timeout=8)
+            if resp.status_code == 200 and "<?xml" in resp.text[:200].lower() or "<urlset" in resp.text[:500].lower() or "<sitemapindex" in resp.text[:500].lower():
+                sitemap_soup = BeautifulSoup(resp.text, "html.parser")
+
+                # Handle sitemap index — follow first child
+                sitemaps = sitemap_soup.find_all("sitemap")
+                if sitemaps:
+                    child_loc = sitemaps[0].find("loc")
+                    if child_loc:
+                        try:
+                            child_resp = requests.get(child_loc.get_text(strip=True), headers=HEADERS, timeout=8)
+                            if child_resp.status_code == 200:
+                                sitemap_soup = BeautifulSoup(child_resp.text, "html.parser")
+                        except Exception:
+                            pass
+
+                urls = sitemap_soup.find_all("url")
+                data["sitemap_page_count"] = len(urls)
+
+                lastmods = []
+                for loc in sitemap_soup.find_all("lastmod"):
+                    try:
+                        dt = dateutil_parser.parse(loc.get_text(strip=True))
+                        lastmods.append(dt)
+                    except (ValueError, OverflowError):
+                        pass
+
+                if lastmods:
+                    newest = max(lastmods)
+                    data["sitemap_last_updated"] = newest.strftime("%Y-%m-%d")
+
+                break  # Found a working sitemap
+        except Exception:
+            continue
+
+    # ---- 2. HTTP Last-Modified header ----
+    try:
+        head_resp = requests.head(url, headers=HEADERS, timeout=8, allow_redirects=True)
+        last_mod = head_resp.headers.get("Last-Modified", "")
+        if last_mod:
+            try:
+                dt = dateutil_parser.parse(last_mod)
+                data["http_last_modified"] = dt.strftime("%Y-%m-%d")
+            except (ValueError, OverflowError):
+                data["http_last_modified"] = last_mod
+    except Exception:
+        pass
+
+    # ---- 3. Domain WHOIS age ----
+    if HAS_WHOIS:
+        try:
+            domain = parsed.netloc.replace("www.", "")
+            w = whois.whois(domain)
+            creation = w.creation_date
+            if isinstance(creation, list):
+                creation = creation[0]
+            if creation:
+                # Strip timezone for comparison with naive datetime
+                if hasattr(creation, 'tzinfo') and creation.tzinfo:
+                    creation = creation.replace(tzinfo=None)
+                data["domain_created"] = creation.strftime("%Y-%m-%d")
+                age = (datetime.now() - creation).days / 365.25
+                data["domain_age_years"] = round(age, 1)
+        except Exception:
+            pass
+
+    # ---- 4. RSS / Atom feed discovery & parsing ----
+    if HAS_FEEDPARSER:
+        feed_url = ""
+
+        # Check <link> tags in the page
+        for link in soup.find_all("link", {"type": re.compile(r"rss|atom")}):
+            href = link.get("href", "")
+            if href:
+                feed_url = href if href.startswith("http") else urljoin(url, href)
+                break
+
+        # Try common paths if no <link> tag found
+        if not feed_url:
+            common_feeds = ["/feed", "/rss", "/blog/feed", "/feed.xml", "/atom.xml", "/rss.xml"]
+            for path in common_feeds:
+                try:
+                    test_url = f"{base}{path}"
+                    r = requests.get(test_url, headers=HEADERS, timeout=5)
+                    if r.status_code == 200 and ("<rss" in r.text[:500].lower() or "<feed" in r.text[:500].lower() or "<atom" in r.text[:500].lower()):
+                        feed_url = test_url
+                        break
+                except Exception:
+                    continue
+
+        if feed_url:
+            try:
+                feed = feedparser.parse(feed_url)
+                data["rss_feed_url"] = feed_url
+                data["rss_post_count"] = len(feed.entries)
+
+                if feed.entries:
+                    # Get the latest entry date
+                    for entry in feed.entries[:5]:
+                        pub = entry.get("published") or entry.get("updated") or ""
+                        if pub:
+                            try:
+                                dt = dateutil_parser.parse(pub)
+                                if not data["rss_latest_date"] or dt.strftime("%Y-%m-%d") > data["rss_latest_date"]:
+                                    data["rss_latest_date"] = dt.strftime("%Y-%m-%d")
+                            except (ValueError, OverflowError):
+                                pass
+            except Exception:
+                pass
 
     return data
 
@@ -1769,12 +2104,16 @@ def scrape_website(url):
     def _run_social():
         return ("social", scrape_social_profiles(soup, html))
 
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    def _run_timing_network():
+        return ("timing_network", analyze_timing_network(url, soup))
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [
             executor.submit(_run_pagespeed),
             executor.submit(_run_fb_ads),
             executor.submit(_run_crawl),
             executor.submit(_run_social),
+            executor.submit(_run_timing_network),
         ]
         for future in as_completed(futures):
             try:
@@ -1819,6 +2158,35 @@ def scrape_website(url):
             intel[f"social_{platform}_subscribers"] = profile_data.get("followers", "Not found")
     for k, v in social.items():
         intel[f"social_{k}"] = v
+
+    # Merge timing network results + upgrade recency assessment
+    timing_net = slow_results.get("timing_network", {})
+    for k, v in timing_net.items():
+        intel[f"timing_{k}"] = v
+
+    # Upgrade site_looks_recent with network signals
+    recency_boost = 0
+    for date_key in ["sitemap_last_updated", "http_last_modified", "rss_latest_date"]:
+        date_val = timing_net.get(date_key, "")
+        if date_val:
+            try:
+                dt = dateutil_parser.parse(date_val)
+                days = (datetime.now() - dt).days
+                if days <= 30:
+                    recency_boost += 3
+                elif days <= 90:
+                    recency_boost += 2
+                elif days <= 365:
+                    recency_boost += 1
+            except (ValueError, OverflowError):
+                pass
+    if timing_net.get("domain_age_years") and timing_net["domain_age_years"] < 1:
+        recency_boost += 1
+
+    if recency_boost >= 3:
+        intel["timing_site_looks_recent"] = "Yes — actively maintained"
+    elif recency_boost >= 1 and intel.get("timing_site_looks_recent", "") != "Yes — actively maintained":
+        intel["timing_site_looks_recent"] = "Likely recent"
 
     # ---- AI analysis (must run last — needs all other data) ----
     if HAS_CLAUDE and ANTHROPIC_API_KEY:

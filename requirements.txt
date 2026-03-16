@@ -6,3 +6,6 @@ flask
 gunicorn
 playwright
 anthropic
+python-whois
+feedparser
+python-dateutil
