@@ -2879,7 +2879,30 @@ def scrape_website(url):
         intel[f"gaps_{k}"] = v
 
     # 7. Automation platform detection (Enhancement 1: anti-signal)
+    # Scan homepage first
     autoplatform = detect_automation_platforms(soup, html)
+
+    # Also scan external domain pages for anti-signals (catches funnels on separate domains)
+    if not autoplatform["has_full_automation_platform"] and external_links:
+        # Deduplicate by domain — only fetch one page per external domain
+        ext_domains_checked = set()
+        for ext_link in external_links[:10]:
+            ext_domain = ext_link.get("domain", "")
+            if ext_domain in ext_domains_checked:
+                continue
+            ext_domains_checked.add(ext_domain)
+            try:
+                _, ext_soup = fetch_page_simple(ext_link["url"], timeout=8)
+                if ext_soup:
+                    ext_html = str(ext_soup)
+                    ext_platform = detect_automation_platforms(ext_soup, ext_html)
+                    if ext_platform["has_full_automation_platform"]:
+                        autoplatform = ext_platform
+                        autoplatform["detected_on_domain"] = ext_domain
+                        break
+            except Exception:
+                continue
+
     for k, v in autoplatform.items():
         intel[f"antisignal_{k}"] = v
 

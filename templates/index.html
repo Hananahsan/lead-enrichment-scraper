@@ -389,14 +389,78 @@
             margin-top: 20px;
         }
 
-        .result-category {
+        /* Two-column layout for detail sections */
+        .results-grid.two-col {
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+        }
+        @media (max-width: 800px) {
+            .results-grid.two-col { grid-template-columns: 1fr; }
+            .score-hero { grid-template-columns: auto 1fr; gap: 20px; }
+            .score-actions { display: none; }
+        }
+
+        /* Score hero card */
+        .score-hero {
+            background: linear-gradient(135deg, #111 0%, #0d1b2a 100%);
+            border: 1px solid #1a3a5c;
+            border-radius: 16px;
+            padding: 32px;
+            margin-bottom: 24px;
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 32px;
+            align-items: center;
+        }
+
+        .score-ring {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 800;
+            color: #fff;
+            position: relative;
+        }
+
+        .score-ring.score-high { background: radial-gradient(circle, #0a2e1a 40%, #065f46 100%); border: 3px solid #34d399; }
+        .score-ring.score-mid { background: radial-gradient(circle, #2e2a0a 40%, #78350f 100%); border: 3px solid #fbbf24; }
+        .score-ring.score-low { background: radial-gradient(circle, #2e0a0a 40%, #7f1d1d 100%); border: 3px solid #f87171; }
+
+        .score-meta h2 { color: #fff; font-size: 20px; margin-bottom: 6px; }
+        .score-meta .classification { color: #94a3b8; font-size: 14px; margin-bottom: 4px; }
+        .score-meta .icp-badge {
+            display: inline-block;
+            padding: 3px 14px;
+            border-radius: 99px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.5px;
+        }
+        .icp-yes { background: #0a2e1a; color: #34d399; border: 1px solid #065f46; }
+        .icp-no { background: #2e0a0a; color: #f87171; border: 1px solid #7f1d1d; }
+        .icp-unknown { background: #1a1a1a; color: #888; border: 1px solid #333; }
+
+        .score-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        /* AI section full-width */
+        .ai-section {
             background: #111;
             border: 1px solid #222;
             border-radius: 12px;
             padding: 24px;
+            margin-bottom: 24px;
+            grid-column: 1 / -1;
         }
 
-        .result-category h3 {
+        .ai-section h3 {
             font-size: 15px;
             font-weight: 600;
             color: #4f8fff;
@@ -405,11 +469,57 @@
             border-bottom: 1px solid #1a1a1a;
         }
 
+        .ai-block { margin-bottom: 16px; }
+        .ai-block:last-child { margin-bottom: 0; }
+        .ai-block-label { font-size: 11px; font-weight: 700; color: #4f8fff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .ai-block-content { color: #d0d0d0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
+        .ai-block-content ol { margin: 0; padding-left: 20px; }
+        .ai-block-content li { margin-bottom: 6px; }
+
+        .result-category {
+            background: #111;
+            border: 1px solid #222;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .result-category-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px 24px;
+            cursor: pointer;
+            user-select: none;
+            transition: background 0.15s;
+        }
+
+        .result-category-header:hover { background: #161616; }
+
+        .result-category-header h3 {
+            font-size: 15px;
+            font-weight: 600;
+            color: #4f8fff;
+            margin: 0;
+        }
+
+        .result-category-header .toggle-icon {
+            color: #555;
+            font-size: 18px;
+            transition: transform 0.2s;
+        }
+
+        .result-category.collapsed .toggle-icon { transform: rotate(-90deg); }
+        .result-category.collapsed .result-category-body { display: none; }
+
+        .result-category-body {
+            padding: 4px 24px 20px;
+        }
+
         .result-row {
             display: flex;
             justify-content: space-between;
             padding: 8px 0;
-            border-bottom: 1px solid #111;
+            border-bottom: 1px solid #1a1a1a;
             font-size: 13px;
         }
 
@@ -430,6 +540,48 @@
         .result-value.good { color: #34d399; }
         .result-value.bad { color: #f87171; }
         .result-value.warn { color: #fbbf24; }
+
+        .result-value a { color: #4f8fff; text-decoration: none; }
+        .result-value a:hover { text-decoration: underline; }
+
+        /* Confidence badges */
+        .conf-high { color: #34d399; }
+        .conf-medium { color: #fbbf24; }
+        .conf-low { color: #f87171; }
+        .conf-none { color: #555; }
+
+        /* PageSpeed color coding */
+        .ps-good { color: #34d399; font-weight: 700; }
+        .ps-mid { color: #fbbf24; font-weight: 700; }
+        .ps-bad { color: #f87171; font-weight: 700; }
+
+        /* Advanced toggle */
+        .advanced-toggle {
+            text-align: center;
+            padding: 16px 0 0;
+            grid-column: 1 / -1;
+        }
+
+        .advanced-toggle button {
+            background: transparent;
+            border: 1px solid #333;
+            color: #888;
+            padding: 8px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: all 0.15s;
+        }
+
+        .advanced-toggle button:hover { border-color: #555; color: #ccc; }
+
+        /* Copy/export buttons */
+        .btn-sm {
+            font-size: 12px;
+            padding: 6px 14px;
+            border-radius: 8px;
+        }
 
         /* Health check panel */
         .health-bar {
@@ -526,11 +678,14 @@
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
                         <h2 style="margin-bottom:0;">Scrape Results</h2>
                         <div style="display:flex; gap:10px;">
+                            <button class="btn btn-outline btn-sm" id="copy-json-btn" title="Copy raw JSON">Copy JSON</button>
                             <a class="btn btn-success" id="url-download-btn" style="font-size:13px; padding:8px 18px;">Download CSV</a>
                             <button class="btn btn-outline" id="url-back-btn" style="font-size:13px; padding:8px 18px;">Scrape Another</button>
                         </div>
                     </div>
-                    <div class="results-grid" id="url-results-grid"></div>
+                    <div id="score-hero-container"></div>
+                    <div id="ai-section-container"></div>
+                    <div class="results-grid two-col" id="url-results-grid"></div>
                 </div>
             </div>
         </div>
@@ -802,12 +957,87 @@
             }, 1000);
         }
 
+        // Store raw results for copy/export
+        let _lastResults = null;
+
         function renderUrlResults(results) {
+            _lastResults = results;
             const grid = $('#url-results-grid');
             grid.innerHTML = '';
 
-            const categories = {
+            // ===== 1. SCORE HERO CARD =====
+            const heroContainer = $('#score-hero-container');
+            heroContainer.innerHTML = '';
+
+            const scoreText = results.ai_overall_score || '';
+            const scoreMatch = scoreText.match(/(\d+)\s*\/\s*10/);
+            const scoreNum = scoreMatch ? parseInt(scoreMatch[1]) : null;
+            const scoreClass = scoreNum >= 7 ? 'score-high' : scoreNum >= 4 ? 'score-mid' : 'score-low';
+
+            const classification = results.ai_classification || '';
+            const icpFit = (results.ai_icp_fit || '').trim().toUpperCase();
+            const icpClass = icpFit === 'YES' ? 'icp-yes' : icpFit === 'NO' ? 'icp-no' : 'icp-unknown';
+            const siteUrl = results.website_url || results.final_url || '';
+
+            const hero = document.createElement('div');
+            hero.className = 'score-hero';
+            hero.innerHTML = `
+                <div class="score-ring ${scoreNum !== null ? scoreClass : 'score-mid'}">
+                    ${scoreNum !== null ? scoreNum + '<span style="font-size:14px;font-weight:400;color:#94a3b8;">/10</span>' : '—'}
+                </div>
+                <div class="score-meta">
+                    <h2>${siteUrl}</h2>
+                    <div class="classification">${classification || 'Classification pending...'}</div>
+                    <span class="icp-badge ${icpClass}">ICP FIT: ${icpFit || 'N/A'}</span>
+                </div>
+                <div class="score-actions">
+                    <span style="color:#666; font-size:12px; text-align:center;">${scoreText.replace(/\d+\s*\/\s*10/, '').trim()}</span>
+                </div>
+            `;
+            heroContainer.appendChild(hero);
+
+            // ===== 2. AI ANALYSIS SECTION (top, full-width) =====
+            const aiContainer = $('#ai-section-container');
+            aiContainer.innerHTML = '';
+
+            const aiFields = [
+                { key: 'ai_audit_summary', label: 'Audit Summary' },
+                { key: 'ai_positioning_gaps', label: 'Positioning Gaps' },
+                { key: 'ai_outreach_hooks', label: 'Outreach Hooks' },
+            ];
+
+            let hasAi = aiFields.some(f => results[f.key]);
+            if (hasAi) {
+                const aiSection = document.createElement('div');
+                aiSection.className = 'ai-section';
+                aiSection.innerHTML = '<h3>AI Analysis</h3>';
+                for (const field of aiFields) {
+                    const val = results[field.key];
+                    if (!val) continue;
+                    const block = document.createElement('div');
+                    block.className = 'ai-block';
+                    // Format outreach hooks as numbered list
+                    let content = val;
+                    if (field.key === 'ai_outreach_hooks') {
+                        const lines = val.split(/\n/).filter(l => l.trim());
+                        const items = lines.map(l => l.replace(/^\d+[\.\)]\s*/, '').trim()).filter(Boolean);
+                        if (items.length > 1) {
+                            content = '<ol>' + items.map(i => `<li>${i}</li>`).join('') + '</ol>';
+                        }
+                    }
+                    block.innerHTML = `
+                        <div class="ai-block-label">${field.label}</div>
+                        <div class="ai-block-content">${content}</div>
+                    `;
+                    aiSection.appendChild(block);
+                }
+                aiContainer.appendChild(aiSection);
+            }
+
+            // ===== 3. DETAIL CATEGORIES (collapsible, two-column) =====
+            const mainCategories = {
                 'Booking Infrastructure': {
+                    open: true,
                     format: {
                         'booking_booking_tool': 'Booking Tool',
                         'booking_booking_tool_branded': 'Branded or Generic',
@@ -817,6 +1047,55 @@
                         'booking_booking_cta_works': 'CTA Works',
                         'booking_has_contact_form': 'Contact Form',
                         'booking_booking_links': 'Booking Links',
+                    }
+                },
+                'Offer Details': {
+                    open: true,
+                    format: {
+                        'offer_offer_type': 'Offer Type',
+                        'offer_price_range': 'Price Range',
+                        'offer_price_points': 'Price Points',
+                        'offer_pricing_page_exists': 'Pricing Page Exists',
+                        'offer_pricing_page_url': 'Pricing Page URL',
+                        'offer_application_required': 'Application Required',
+                        'offer_sales_model': 'Sales Model',
+                        'offer_target_client': 'Target Client',
+                        'offer_solo_or_multi_coach': 'Solo/Multi Coach',
+                        'offer_offer_description': 'Description',
+                    }
+                },
+                'Technical Gaps': {
+                    open: true,
+                    format: {
+                        'gaps_has_ssl': 'Has SSL',
+                        'gaps_ssl_issues': 'SSL Issues',
+                        'gaps_missing_favicon': 'Missing Favicon',
+                        'gaps_outdated_footer_year': 'Outdated Footer Year',
+                        'gaps_placeholder_text_found': 'Placeholder Text',
+                        'gaps_placeholder_details': 'Placeholder Details',
+                        'gaps_conflicting_ctas': 'Conflicting CTAs',
+                        'gaps_cta_count': 'CTA Count',
+                        'gaps_cta_unique_actions': 'Unique CTA Destinations',
+                        'gaps_cta_list': 'CTAs Found',
+                        'gaps_booking_page_no_context': 'Booking Page No Context',
+                        'gaps_broken_links': 'Broken Links',
+                        'gaps_technical_issues_summary': 'Issues Summary',
+                    }
+                },
+                'Audience Signals': {
+                    open: true,
+                    format: {
+                        'audience_serves_multiple_audiences': 'Multiple Audiences',
+                        'audience_audience_segments': 'Segments',
+                        'audience_has_active_blog': 'Active Blog',
+                        'audience_latest_blog_date': 'Latest Blog Date',
+                        'audience_has_podcast': 'Has Podcast',
+                        'audience_has_youtube': 'Has YouTube',
+                        'audience_social_proof_testimonials': 'Testimonials',
+                        'audience_testimonial_count': 'Testimonial Count',
+                        'audience_social_proof_logos': 'Logo Bar',
+                        'audience_social_proof_media_mentions': 'Media Mentions',
+                        'audience_social_proof_details': 'Social Proof Details',
                     }
                 },
                 'Paid Ads Detection': {
@@ -839,19 +1118,7 @@
                         'fbads_fb_ads_library_url': 'Ad Library Link',
                     }
                 },
-                'Site Performance': {
-                    format: {
-                        'mobile_load_time_seconds': 'Mobile Load Time (seconds)',
-                        'mobile_cta_visible_above_fold': 'Mobile CTA Visible Above Fold',
-                        'perf_load_time_seconds': 'Server Response Time (seconds)',
-                        'perf_page_size_kb': 'Page Size (KB)',
-                        'perf_mobile_viewport_set': 'Mobile Viewport Set',
-                        'perf_image_count': 'Image Count',
-                        'perf_mobile_layout_issues': 'Mobile Issues',
-                        'rendered_with': 'Rendered With',
-                    }
-                },
-                'PageSpeed Insights (Lighthouse)': {
+                'PageSpeed Insights': {
                     format: {
                         'pagespeed_score_performance': 'Performance Score',
                         'pagespeed_score_accessibility': 'Accessibility Score',
@@ -866,21 +1133,48 @@
                         'pagespeed_opportunities': 'Top Opportunities',
                     }
                 },
-                'Offer Details': {
+                'Site Performance': {
                     format: {
-                        'offer_offer_type': 'Offer Type',
-                        'offer_price_range': 'Price Range',
-                        'offer_price_points': 'Price Points',
-                        'offer_pricing_page_exists': 'Pricing Page Exists',
-                        'offer_pricing_page_url': 'Pricing Page URL',
-                        'offer_application_required': 'Application Required',
-                        'offer_sales_model': 'Sales Model',
-                        'offer_target_client': 'Target Client',
-                        'offer_solo_or_multi_coach': 'Solo/Multi Coach',
-                        'offer_offer_description': 'Description',
+                        'mobile_load_time_seconds': 'Mobile Load Time (seconds)',
+                        'mobile_cta_visible_above_fold': 'Mobile CTA Above Fold',
+                        'perf_load_time_seconds': 'Server Response Time (seconds)',
+                        'perf_page_size_kb': 'Page Size (KB)',
+                        'perf_mobile_viewport_set': 'Mobile Viewport Set',
+                        'perf_image_count': 'Image Count',
+                        'perf_mobile_layout_issues': 'Mobile Issues',
+                        'rendered_with': 'Rendered With',
                     }
                 },
-                'Solo vs Multi-Coach (Deep Scan)': {
+                'Social Media Profiles': {
+                    format: {
+                        'social_instagram_url': 'Instagram URL',
+                        'social_instagram_followers': 'Instagram Followers',
+                        'social_instagram_bio': 'Instagram Bio',
+                        'social_linkedin_url': 'LinkedIn URL',
+                        'social_linkedin_followers': 'LinkedIn Followers',
+                        'social_youtube_url': 'YouTube URL',
+                        'social_youtube_subscribers': 'YouTube Subscribers',
+                        'social_twitter_url': 'Twitter/X URL',
+                        'social_twitter_followers': 'Twitter/X Followers',
+                        'social_facebook_url': 'Facebook URL',
+                        'social_facebook_followers': 'Facebook Followers',
+                        'social_tiktok_url': 'TikTok URL',
+                        'social_tiktok_followers': 'TikTok Followers',
+                        'social_social_total_followers': 'Total Followers',
+                        'social_social_most_active_platform': 'Most Active Platform',
+                        'social_social_summary': 'Summary',
+                    }
+                },
+                'External Domains / Funnels': {
+                    format: {
+                        'external_domains': 'External Domains Found',
+                        'external_link_count': 'External Link Count',
+                        'funnel_has_secondary_domain': 'Has Secondary Domain',
+                        'funnel_secondary_domains': 'Secondary Domains',
+                        'funnel_secondary_funnel_platform': 'Secondary Funnel Platform',
+                    }
+                },
+                'Solo vs Multi-Coach': {
                     format: {
                         'team_solo_or_multi_coach': 'Determination',
                         'team_team_page_exists': 'Team Page Exists',
@@ -890,22 +1184,7 @@
                         'team_copy_uses_we_our': 'Copy Uses We/Our',
                     }
                 },
-                'Audience Signals': {
-                    format: {
-                        'audience_serves_multiple_audiences': 'Multiple Audiences',
-                        'audience_audience_segments': 'Segments',
-                        'audience_has_active_blog': 'Active Blog',
-                        'audience_latest_blog_date': 'Latest Blog Date',
-                        'audience_has_podcast': 'Has Podcast',
-                        'audience_has_youtube': 'Has YouTube',
-                        'audience_social_proof_testimonials': 'Testimonials',
-                        'audience_testimonial_count': 'Testimonial Count',
-                        'audience_social_proof_logos': 'Logo Bar',
-                        'audience_social_proof_media_mentions': 'Media Mentions',
-                        'audience_social_proof_details': 'Social Proof Details',
-                    }
-                },
-                'Recency — Overall Assessment': {
+                'Recency — Overall': {
                     format: {
                         'timing_site_looks_recent': 'Site Freshness',
                         'timing_copyright_year': 'Copyright Year',
@@ -914,7 +1193,7 @@
                         'timing_domain_created': 'Domain Created',
                     }
                 },
-                'Recency — Content Freshness': {
+                'Recency — Content': {
                     format: {
                         'timing_newest_content_date': 'Newest Content Date',
                         'timing_content_dates_found': 'Dates Found on Site',
@@ -926,7 +1205,7 @@
                         'timing_rss_post_count': 'Feed Post Count',
                     }
                 },
-                'Recency — Activity Signals': {
+                'Recency — Activity': {
                     format: {
                         'timing_now_enrolling_banner': 'Enrolling / Launch Banner',
                         'timing_new_program_signals': 'New Program Signals',
@@ -948,26 +1227,15 @@
                         'crawl_full_text_length': 'Total Text Length (chars)',
                     }
                 },
-                'Technical Gaps': {
-                    format: {
-                        'gaps_has_ssl': 'Has SSL',
-                        'gaps_ssl_issues': 'SSL Issues',
-                        'gaps_missing_favicon': 'Missing Favicon',
-                        'gaps_outdated_footer_year': 'Outdated Footer Year',
-                        'gaps_placeholder_text_found': 'Placeholder Text',
-                        'gaps_placeholder_details': 'Placeholder Details',
-                        'gaps_conflicting_ctas': 'Conflicting CTAs',
-                        'gaps_cta_count': 'CTA Count',
-                        'gaps_cta_list': 'CTAs Found',
-                        'gaps_booking_page_no_context': 'Booking Page No Context',
-                        'gaps_broken_links': 'Broken Links',
-                        'gaps_technical_issues_summary': 'Issues Summary',
-                    }
-                },
+            };
+
+            // Advanced categories (hidden by default)
+            const advancedCategories = {
                 'Anti-Signal Detection': {
                     format: {
                         'antisignal_has_full_automation_platform': 'Full Automation Platform',
                         'antisignal_automation_platform_name': 'Platform Name',
+                        'antisignal_detected_on_domain': 'Detected On Domain',
                         'antisignal_has_gohighlevel': 'GoHighLevel',
                         'antisignal_has_clickfunnels': 'ClickFunnels',
                         'antisignal_has_kajabi': 'Kajabi',
@@ -998,7 +1266,7 @@
                     format: {
                         'gaps_cta_unique_destinations': 'Unique Destinations',
                         'gaps_cta_destination_mismatch': 'Destination Mismatch',
-                        'gaps_cta_destinations': 'CTA → Destination Map',
+                        'gaps_cta_destinations': 'CTA Destination Map',
                         'gaps_cta_mismatch_hook': 'Hook',
                     }
                 },
@@ -1031,45 +1299,6 @@
                         'schema_schema_gap_hook': 'Hook',
                     }
                 },
-                'Social Media Profiles': {
-                    format: {
-                        'social_instagram_url': 'Instagram URL',
-                        'social_instagram_followers': 'Instagram Followers',
-                        'social_instagram_bio': 'Instagram Bio',
-                        'social_linkedin_url': 'LinkedIn URL',
-                        'social_linkedin_followers': 'LinkedIn Followers',
-                        'social_youtube_url': 'YouTube URL',
-                        'social_youtube_subscribers': 'YouTube Subscribers',
-                        'social_twitter_url': 'Twitter/X URL',
-                        'social_twitter_followers': 'Twitter/X Followers',
-                        'social_facebook_url': 'Facebook URL',
-                        'social_facebook_followers': 'Facebook Followers',
-                        'social_tiktok_url': 'TikTok URL',
-                        'social_tiktok_followers': 'TikTok Followers',
-                        'social_social_total_followers': 'Total Followers',
-                        'social_social_most_active_platform': 'Most Active Platform',
-                        'social_social_summary': 'Summary',
-                    }
-                },
-                'AI Analysis': {
-                    format: {
-                        'ai_classification': 'Business Model Classification',
-                        'ai_icp_fit': 'ICP Fit',
-                        'ai_audit_summary': 'Audit Summary',
-                        'ai_positioning_gaps': 'Positioning Gaps',
-                        'ai_outreach_hooks': 'Outreach Hooks',
-                        'ai_overall_score': 'Overall Score',
-                    }
-                },
-                'External Domains / Funnels': {
-                    format: {
-                        'external_domains': 'External Domains Found',
-                        'external_link_count': 'External Link Count',
-                        'funnel_has_secondary_domain': 'Has Secondary Domain',
-                        'funnel_secondary_domains': 'Secondary Domains',
-                        'funnel_secondary_funnel_platform': 'Secondary Funnel Platform',
-                    }
-                },
                 'Data Confidence': {
                     format: {
                         '_confidence': 'Confidence Levels',
@@ -1077,12 +1306,63 @@
                 },
             };
 
-            for (const [catName, catInfo] of Object.entries(categories)) {
-                const section = document.createElement('div');
-                section.className = 'result-category';
-                section.innerHTML = `<h3>${catName}</h3>`;
-                let hasRows = false;
+            // Helper: format a value for display
+            function formatValue(key, value) {
+                let displayVal = value;
+                let valClass = '';
 
+                if (Array.isArray(value)) {
+                    if (value.length === 0) { displayVal = 'None'; }
+                    else if (typeof value[0] === 'object') { displayVal = value.map(v => v.text || v.url || JSON.stringify(v)).join(', '); }
+                    else { displayVal = value.join(', '); }
+                } else if (typeof value === 'object' && value !== null) {
+                    // Confidence dict: render as colored badges
+                    if (key === '_confidence') {
+                        displayVal = Object.entries(value).map(([k, v]) => {
+                            const cls = v === 'HIGH' ? 'conf-high' : v === 'MEDIUM' ? 'conf-medium' : v === 'LOW' ? 'conf-low' : 'conf-none';
+                            return `<span class="${cls}">${k}: ${v}</span>`;
+                        }).join(' &middot; ');
+                        return { displayVal, valClass: '' };
+                    }
+                    displayVal = JSON.stringify(value);
+                } else if (typeof value === 'boolean') {
+                    displayVal = value ? 'Yes' : 'No';
+                    if (key.includes('broken') || key.includes('missing') || key.includes('outdated') || key.includes('placeholder') || key.includes('conflicting') || key.includes('no_context') || key.includes('excessive')) {
+                        valClass = value ? 'bad' : 'good';
+                    } else {
+                        valClass = value ? 'good' : 'warn';
+                    }
+                }
+
+                // PageSpeed score coloring
+                if (key.startsWith('pagespeed_score_') && typeof value === 'number') {
+                    valClass = value >= 90 ? 'ps-good' : value >= 50 ? 'ps-mid' : 'ps-bad';
+                    displayVal = value + '/100';
+                }
+
+                // Make URLs clickable
+                if (typeof displayVal === 'string' && displayVal.match(/^https?:\/\//)) {
+                    displayVal = `<a href="${displayVal}" target="_blank" rel="noopener">${displayVal}</a>`;
+                }
+
+                return { displayVal, valClass };
+            }
+
+            // Helper: build a collapsible category section
+            function buildCategory(catName, catInfo, startOpen) {
+                const section = document.createElement('div');
+                section.className = 'result-category' + (startOpen ? '' : ' collapsed');
+
+                const header = document.createElement('div');
+                header.className = 'result-category-header';
+                header.innerHTML = `<h3>${catName}</h3><span class="toggle-icon">&#9660;</span>`;
+                header.addEventListener('click', () => section.classList.toggle('collapsed'));
+                section.appendChild(header);
+
+                const body = document.createElement('div');
+                body.className = 'result-category-body';
+
+                let hasRows = false;
                 for (const [key, label] of Object.entries(catInfo.format)) {
                     let value = results[key];
                     if (value === undefined || value === null || value === '') continue;
@@ -1090,39 +1370,67 @@
                     hasRows = true;
                     const row = document.createElement('div');
                     row.className = 'result-row';
-
-                    let displayVal = value;
-                    let valClass = '';
-
-                    if (Array.isArray(value)) {
-                        if (value.length === 0) { displayVal = 'None'; }
-                        else if (typeof value[0] === 'object') { displayVal = value.map(v => v.text || v.url || JSON.stringify(v)).join(', '); }
-                        else { displayVal = value.join(', '); }
-                    } else if (typeof value === 'object') {
-                        displayVal = JSON.stringify(value);
-                    } else if (typeof value === 'boolean') {
-                        displayVal = value ? 'Yes' : 'No';
-                        if (key.includes('broken') || key.includes('missing') || key.includes('outdated') || key.includes('placeholder') || key.includes('conflicting') || key.includes('no_context')) {
-                            valClass = value ? 'bad' : 'good';
-                        } else {
-                            valClass = value ? 'good' : 'warn';
-                        }
-                    }
-
+                    const { displayVal, valClass } = formatValue(key, value);
                     row.innerHTML = `
                         <span class="result-key">${label}</span>
                         <span class="result-value ${valClass}">${displayVal}</span>
                     `;
-                    section.appendChild(row);
+                    body.appendChild(row);
                 }
 
-                if (hasRows) grid.appendChild(section);
+                section.appendChild(body);
+                return hasRows ? section : null;
+            }
+
+            // Render main categories
+            for (const [catName, catInfo] of Object.entries(mainCategories)) {
+                const el = buildCategory(catName, catInfo, catInfo.open || false);
+                if (el) grid.appendChild(el);
+            }
+
+            // Advanced toggle
+            let hasAdvanced = false;
+            const advancedEls = [];
+            for (const [catName, catInfo] of Object.entries(advancedCategories)) {
+                const el = buildCategory(catName, catInfo, false);
+                if (el) { advancedEls.push(el); hasAdvanced = true; }
+            }
+
+            if (hasAdvanced) {
+                const toggleDiv = document.createElement('div');
+                toggleDiv.className = 'advanced-toggle';
+                toggleDiv.innerHTML = '<button>Show Advanced Details</button>';
+                grid.appendChild(toggleDiv);
+
+                const advancedContainer = document.createElement('div');
+                advancedContainer.className = 'results-grid two-col hidden';
+                advancedContainer.id = 'advanced-sections';
+                advancedContainer.style.gridColumn = '1 / -1';
+                advancedEls.forEach(el => advancedContainer.appendChild(el));
+                grid.appendChild(advancedContainer);
+
+                toggleDiv.querySelector('button').addEventListener('click', function() {
+                    const adv = $('#advanced-sections');
+                    const hidden = adv.classList.toggle('hidden');
+                    this.textContent = hidden ? 'Show Advanced Details' : 'Hide Advanced Details';
+                });
             }
         }
 
         $('#url-back-btn').addEventListener('click', () => {
             $('#urlInput').value = '';
             showStep('upload');
+        });
+
+        // Copy JSON to clipboard
+        $('#copy-json-btn').addEventListener('click', () => {
+            if (_lastResults) {
+                navigator.clipboard.writeText(JSON.stringify(_lastResults, null, 2)).then(() => {
+                    const btn = $('#copy-json-btn');
+                    btn.textContent = 'Copied!';
+                    setTimeout(() => { btn.textContent = 'Copy JSON'; }, 2000);
+                });
+            }
         });
 
         // Health check on page load
