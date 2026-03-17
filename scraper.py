@@ -2761,7 +2761,7 @@ def scrape_website(url):
 
     intel["subpages_found"] = list(subpages.keys())
 
-    # Discover external domains — scan homepage AND all discovered subpages
+    # Discover external domains — scan homepage + all internal links found on homepage
     all_external_links = []
     all_external_domains = set()
 
@@ -2770,18 +2770,44 @@ def scrape_website(url):
     all_external_links.extend(homepage_ext_links)
     all_external_domains.update(homepage_ext_domains)
 
-    # Scan all discovered subpages except blog/podcast (slow, unlikely to have funnel links)
-    SKIP_SUBPAGES = ["blog", "podcast"]
+    # Build list of ALL unique internal pages to scan (from links + subpages)
+    scanned_urls = {url.rstrip("/")}
+    pages_to_scan = []
 
+    # Add named subpages (about, pricing, etc.)
     for subpage_key, subpage_url in subpages.items():
-        if subpage_key in SKIP_SUBPAGES:
+        normalized = subpage_url.rstrip("/")
+        if normalized not in scanned_urls:
+            scanned_urls.add(normalized)
+            pages_to_scan.append(subpage_url)
+
+    # Add ALL internal links from the homepage (catches /tiny-challenge-book, /apply, etc.)
+    for link in links:
+        link_url = link["url"].rstrip("/")
+        # Skip anchors, files, and already-seen URLs
+        if link_url in scanned_urls:
             continue
+        parsed_link = urlparse(link_url)
+        # Skip non-page resources
+        if parsed_link.path.endswith((".pdf", ".jpg", ".png", ".gif", ".css", ".js", ".svg", ".ico", ".xml")):
+            continue
+        # Skip homepage itself
+        if not parsed_link.path.strip("/"):
+            continue
+        scanned_urls.add(link_url)
+        pages_to_scan.append(link["url"])
+
+    # Cap at 15 internal pages to keep it fast
+    pages_to_scan = pages_to_scan[:15]
+
+    # Scan each internal page for external links
+    for page_url in pages_to_scan:
         try:
-            _, subpage_soup = fetch_page_simple(subpage_url, timeout=8)
-            if subpage_soup:
-                sub_ext_links, sub_ext_domains = get_external_links(subpage_soup, subpage_url)
-                all_external_links.extend(sub_ext_links)
-                all_external_domains.update(sub_ext_domains)
+            _, page_soup = fetch_page_simple(page_url, timeout=8)
+            if page_soup:
+                page_ext_links, page_ext_domains = get_external_links(page_soup, page_url)
+                all_external_links.extend(page_ext_links)
+                all_external_domains.update(page_ext_domains)
         except Exception:
             continue
 
