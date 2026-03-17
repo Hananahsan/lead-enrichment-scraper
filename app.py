@@ -10,7 +10,7 @@ from datetime import datetime
 
 from flask import Flask, render_template, request, jsonify, send_file
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from scraper import scrape_website, normalize_url, HAS_PLAYWRIGHT, HAS_CLAUDE, PAGESPEED_API_KEY, ANTHROPIC_API_KEY, MAX_WORKERS_FAST
+from scraper import scrape_website, normalize_url, HAS_PLAYWRIGHT, HAS_CLAUDE, PAGESPEED_API_KEY, ANTHROPIC_API_KEY, MAX_WORKERS, MAX_WORKERS_FAST
 
 import pandas as pd
 
@@ -24,6 +24,7 @@ os.makedirs(app.config["OUTPUT_FOLDER"], exist_ok=True)
 
 # In-memory job tracking
 jobs = {}
+_jobs_lock = threading.Lock()
 
 
 def find_website_column(columns):
@@ -75,7 +76,7 @@ def run_scrape_job(job_id, input_path, fast=False):
         for idx in skip_indices:
             results_dict[idx] = {"enriched_scrape_status": "no_url"}
 
-        workers = MAX_WORKERS_FAST if fast else 3
+        workers = MAX_WORKERS_FAST if fast else MAX_WORKERS
 
         def _scrape_one(idx, url):
             return idx, scrape_website(url, fast=fast)
@@ -98,13 +99,16 @@ def run_scrape_job(job_id, input_path, fast=False):
                     _, intel = fut.result()
                     results_dict[idx] = _flatten_intel(intel)
                     status = intel.get("scrape_status", "unknown")
-                    jobs[job_id]["stats"][status] = jobs[job_id]["stats"].get(status, 0) + 1
+                    with _jobs_lock:
+                        jobs[job_id]["stats"][status] = jobs[job_id]["stats"].get(status, 0) + 1
                 except Exception as e:
                     results_dict[idx] = {"enriched_scrape_status": "error", "enriched_error": str(e)}
-                    jobs[job_id]["stats"]["error"] = jobs[job_id]["stats"].get("error", 0) + 1
+                    with _jobs_lock:
+                        jobs[job_id]["stats"]["error"] = jobs[job_id]["stats"].get("error", 0) + 1
 
-                jobs[job_id]["current"] = len(results_dict)
-                jobs[job_id]["current_url"] = url
+                with _jobs_lock:
+                    jobs[job_id]["current"] = len(results_dict)
+                    jobs[job_id]["current_url"] = url
 
         # Reassemble in original row order
         results = [results_dict.get(i, {}) for i in range(total)]
@@ -141,7 +145,12 @@ def upload():
     file.save(filepath)
 
     # Preview
-    df = pd.read_csv(filepath)
+    try:
+        df = pd.read_csv(filepath)
+    except Exception as e:
+        os.remove(filepath)
+        return jsonify({"error": f"Could not parse CSV: {str(e)[:200]}"}), 400
+
     website_col = find_website_column(df.columns)
 
     return jsonify({
@@ -156,7 +165,7 @@ def upload():
 @app.route("/scrape-url", methods=["POST"])
 def scrape_url():
     """Scrape a single URL and return results as JSON + downloadable CSV."""
-    data = request.get_json()
+    data = request.get_json(silent=True) or {}
     url = data.get("url", "").strip()
     if not url:
         return jsonify({"error": "No URL provided"}), 400
@@ -208,6 +217,9 @@ def start(job_id):
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], f"{job_id}.csv")
     if not os.path.exists(filepath):
         return jsonify({"error": "Job not found"}), 404
+
+    if job_id in jobs and jobs[job_id].get("status") == "running":
+        return jsonify({"error": "Job already running"}), 409
 
     data = request.get_json(silent=True) or {}
     fast = data.get("mode", "fast") == "fast"  # Default to fast for CSV batches

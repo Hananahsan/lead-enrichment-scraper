@@ -71,8 +71,8 @@ HEADERS = {
 }
 
 TIMEOUT = 15
-MAX_WORKERS = 8  # Increased — browser pool removes per-site launch overhead
-MAX_WORKERS_FAST = 10  # Higher concurrency for fast mode (no browser)
+MAX_WORKERS = 25  # Full mode — 15 browser pool, extra workers handle non-browser tasks
+MAX_WORKERS_FAST = 20  # Fast mode — no browser, lightweight HTTP only
 MAX_CRAWL_FULL = 15  # Reduced from 50 — diminishing returns past 15 pages
 
 PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
@@ -145,7 +145,7 @@ class BrowserPool:
 
 
 # Global browser pool — shared across all scrape_website() calls
-_browser_pool = BrowserPool(size=4)
+_browser_pool = BrowserPool(size=15)
 atexit.register(_browser_pool.shutdown)
 
 # Shared requests.Session for connection pooling (DNS cache + keep-alive)
@@ -229,7 +229,6 @@ def fetch_page_browser(url, timeout=30000):
             pass
 
         context.close()
-        _browser_pool.release(browser)
 
         result = BrowserResult(final_url, content, status, elapsed, headers)
         result.mobile_cta_visible = mobile_cta_visible
@@ -238,11 +237,12 @@ def fetch_page_browser(url, timeout=30000):
         soup = BeautifulSoup(content, "html.parser")
         return result, soup
     except Exception:
+        return fetch_page_simple(url)
+    finally:
         try:
             _browser_pool.release(browser)
         except Exception:
             pass
-        return fetch_page_simple(url)
 
 
 def fetch_page(url, timeout=TIMEOUT):
@@ -284,7 +284,7 @@ def get_pagespeed_insights(url):
         }
         if PAGESPEED_API_KEY:
             params["key"] = PAGESPEED_API_KEY
-        resp = requests.get(PAGESPEED_API_URL, params=params, timeout=60)
+        resp = _http_session.get(PAGESPEED_API_URL, params=params, timeout=60)
         if resp.status_code != 200:
             return data
 
@@ -582,13 +582,13 @@ def analyze_booking(soup, html, links, base_url):
 
         try:
             # Try HEAD first
-            r = requests.head(test_url, headers=HEADERS, timeout=10, allow_redirects=True)
+            r = _http_session.head(test_url, timeout=10, allow_redirects=True)
             if r.status_code < 400:
                 data["booking_cta_works"] = "Yes"
             elif is_known_tool and r.status_code in (400, 403, 405):
                 # Known tools often block HEAD — retry with GET
                 try:
-                    r2 = requests.get(test_url, headers=HEADERS, timeout=10, allow_redirects=True)
+                    r2 = _http_session.get(test_url, timeout=10, allow_redirects=True)
                     if r2.status_code < 400:
                         data["booking_cta_works"] = "Yes"
                     else:
@@ -1431,8 +1431,8 @@ def analyze_timing_network(url, soup):
     ]
     for sitemap_url in sitemap_urls_to_try:
         try:
-            resp = requests.get(sitemap_url, headers=HEADERS, timeout=8)
-            if resp.status_code == 200 and "<?xml" in resp.text[:200].lower() or "<urlset" in resp.text[:500].lower() or "<sitemapindex" in resp.text[:500].lower():
+            resp = _http_session.get(sitemap_url, timeout=8)
+            if resp.status_code == 200 and ("<?xml" in resp.text[:200].lower() or "<urlset" in resp.text[:500].lower() or "<sitemapindex" in resp.text[:500].lower()):
                 sitemap_soup = BeautifulSoup(resp.text, "html.parser")
 
                 # Handle sitemap index — follow first child
@@ -1441,7 +1441,7 @@ def analyze_timing_network(url, soup):
                     child_loc = sitemaps[0].find("loc")
                     if child_loc:
                         try:
-                            child_resp = requests.get(child_loc.get_text(strip=True), headers=HEADERS, timeout=8)
+                            child_resp = _http_session.get(child_loc.get_text(strip=True), timeout=8)
                             if child_resp.status_code == 200:
                                 sitemap_soup = BeautifulSoup(child_resp.text, "html.parser")
                         except Exception:
@@ -1468,7 +1468,7 @@ def analyze_timing_network(url, soup):
 
     # ---- 2. HTTP Last-Modified header ----
     try:
-        head_resp = requests.head(url, headers=HEADERS, timeout=8, allow_redirects=True)
+        head_resp = _http_session.head(url, timeout=8, allow_redirects=True)
         last_mod = head_resp.headers.get("Last-Modified", "")
         if last_mod:
             try:
@@ -1514,7 +1514,7 @@ def analyze_timing_network(url, soup):
             for path in common_feeds:
                 try:
                     test_url = f"{base}{path}"
-                    r = requests.get(test_url, headers=HEADERS, timeout=5)
+                    r = _http_session.get(test_url, timeout=5)
                     if r.status_code == 200 and ("<rss" in r.text[:500].lower() or "<feed" in r.text[:500].lower() or "<atom" in r.text[:500].lower()):
                         feed_url = test_url
                         break
@@ -1589,7 +1589,7 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
 
     def _check_link(link):
         try:
-            r = requests.head(link["url"], headers=HEADERS, timeout=5, allow_redirects=True)
+            r = _http_session.head(link["url"], timeout=5, allow_redirects=True)
             if r.status_code >= 400:
                 return {"url": link["url"], "text": link["text"][:50], "status": r.status_code}
         except Exception:
@@ -1850,7 +1850,7 @@ def check_booking_redirects(booking_data):
         return data
 
     try:
-        resp = requests.get(target_url, headers=HEADERS, timeout=10, allow_redirects=True)
+        resp = _http_session.get(target_url, timeout=10, allow_redirects=True)
         chain = [r.url for r in resp.history] + [resp.url]
         data["booking_redirect_count"] = len(resp.history)
         data["booking_redirect_chain"] = chain
@@ -2122,7 +2122,7 @@ def audit_confirmation_pages(crawl_data, base_url):
         test_url = f"{base}{path}"
         if test_url not in confirm_pages:
             try:
-                resp = requests.head(test_url, headers=HEADERS, timeout=5, allow_redirects=True)
+                resp = _http_session.head(test_url, timeout=5, allow_redirects=True)
                 if resp.status_code == 200:
                     confirm_pages.append(test_url)
             except Exception:
@@ -2420,13 +2420,13 @@ def check_facebook_ads(url):
                                 pass
 
                     context.close()
-                    _browser_pool.release(browser)
                 except Exception:
+                    data["fb_ads_status"] = "Check failed (browser error)"
+                finally:
                     try:
                         _browser_pool.release(browser)
                     except Exception:
                         pass
-                    data["fb_ads_status"] = "Check failed (browser error)"
             else:
                 data["fb_ads_status"] = "Browser pool busy"
         else:
@@ -2578,35 +2578,37 @@ def scrape_social_profiles(soup, html):
                 except Exception:
                     pass
 
-                # Parse follower count to number
-                if profile.get("followers"):
-                    f_str = str(profile["followers"]).replace(",", "")
-                    multiplier = 1
-                    if f_str.upper().endswith("K"):
-                        multiplier = 1000
-                        f_str = f_str[:-1]
-                    elif f_str.upper().endswith("M"):
-                        multiplier = 1000000
-                        f_str = f_str[:-1]
-                    try:
-                        count = int(float(f_str) * multiplier)
-                        profile["followers_numeric"] = count
-                        total_followers += count
-                        platform_activity[platform] = count
-                    except (ValueError, TypeError):
-                        pass
+            # Parse follower count to number (runs on both success and failure)
+            if profile.get("followers"):
+                f_str = str(profile["followers"]).replace(",", "")
+                multiplier = 1
+                if f_str.upper().endswith("K"):
+                    multiplier = 1000
+                    f_str = f_str[:-1]
+                elif f_str.upper().endswith("M"):
+                    multiplier = 1000000
+                    f_str = f_str[:-1]
+                try:
+                    count = int(float(f_str) * multiplier)
+                    profile["followers_numeric"] = count
+                    total_followers += count
+                    platform_activity[platform] = count
+                except (ValueError, TypeError):
+                    pass
 
-                data["social_profiles"][platform] = profile
+            data["social_profiles"][platform] = profile
 
         context.close()
-        _browser_pool.release(browser)
 
     except Exception:
+        data["social_summary"] = "Social scraping failed"
+    finally:
         try:
             _browser_pool.release(browser)
         except Exception:
             pass
-        data["social_summary"] = "Social scraping failed"
+
+    if data.get("social_summary") == "Social scraping failed":
         return data
 
     data["social_total_followers"] = total_followers
@@ -2832,7 +2834,7 @@ def scrape_website(url, fast=False):
 
     intel["scrape_status"] = "success"
     intel["final_url"] = resp.url
-    intel["rendered_with"] = "headless_browser" if HAS_PLAYWRIGHT else "requests"
+    intel["rendered_with"] = "requests" if fast else ("headless_browser" if HAS_PLAYWRIGHT else "requests")
     html = str(soup)
     text = soup.get_text(separator=" ", strip=True)
     links = get_all_links(soup, url)

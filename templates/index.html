@@ -409,7 +409,7 @@
                     <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #27272a; background: transparent; color: #71717a;" id="mode-full-label">
                         <input type="radio" name="scrape-mode" value="full" style="accent-color: #3b82f6;"> Full
                     </label>
-                    <span style="color: #52525b; font-size: 12px;" id="mode-desc">10 parallel workers · skips Playwright, FB ads, social, crawl · ~10-15s/site</span>
+                    <span style="color: #52525b; font-size: 12px;" id="mode-desc">20 parallel workers · skips Playwright, FB ads, social, crawl · ~8-12s/site</span>
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" id="start-btn">Start Enrichment</button>
@@ -504,7 +504,7 @@
                 const fast = radio.value === 'fast';
                 $('#mode-fast-label').style.cssText = fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
                 $('#mode-full-label').style.cssText = !fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
-                $('#mode-desc').textContent = fast ? '10 parallel workers · skips Playwright, FB ads, social, crawl · ~10-15s/site' : '8 parallel workers · full Playwright + AI analysis · ~20-25s/site';
+                $('#mode-desc').textContent = fast ? '20 parallel workers · skips Playwright, FB ads, social, crawl · ~8-12s/site' : '25 parallel workers · full Playwright + AI analysis · ~12-18s/site';
             });
         });
 
@@ -515,9 +515,18 @@
             pollInterval = setInterval(pollStatus, 1000);
         });
 
+        let pollErrors = 0;
         async function pollStatus() {
-            const res = await fetch(`/status/${currentJobId}`);
-            const data = await res.json();
+            let res, data;
+            try {
+                res = await fetch(`/status/${currentJobId}`);
+                data = await res.json();
+            } catch (e) {
+                pollErrors++;
+                if (pollErrors >= 5) { clearInterval(pollInterval); alert('Lost connection to server. Please refresh.'); }
+                return;
+            }
+            pollErrors = 0;
             if (data.error) return;
             const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
             $('#progress-bar').style.width = pct + '%';
