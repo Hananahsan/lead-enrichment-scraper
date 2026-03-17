@@ -401,6 +401,16 @@
                 <div class="table-wrap">
                     <table id="preview-table"><thead><tr id="preview-header"></tr></thead><tbody id="preview-body"></tbody></table>
                 </div>
+                <div class="mode-toggle" style="margin: 18px 0 8px; display: flex; align-items: center; gap: 12px;">
+                    <span style="color: #a1a1aa; font-size: 13px; font-weight: 600;">Mode:</span>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #3b82f6; background: #0c1929; color: #3b82f6;" id="mode-fast-label">
+                        <input type="radio" name="scrape-mode" value="fast" checked style="accent-color: #3b82f6;"> Fast
+                    </label>
+                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #27272a; background: transparent; color: #71717a;" id="mode-full-label">
+                        <input type="radio" name="scrape-mode" value="full" style="accent-color: #3b82f6;"> Full
+                    </label>
+                    <span style="color: #52525b; font-size: 12px;" id="mode-desc">10 parallel workers · skips Playwright, FB ads, social, crawl · ~10-15s/site</span>
+                </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" id="start-btn">Start Enrichment</button>
                     <button class="btn btn-outline" id="reset-btn">Upload Different File</button>
@@ -411,7 +421,7 @@
         <!-- Step 3: Progress -->
         <div id="step-progress" class="hidden">
             <div class="card">
-                <h2 class="pulsing">Scraping in progress...</h2>
+                <h2 class="pulsing">Scraping in progress... <span id="mode-badge" class="badge" style="font-size:11px; vertical-align: middle;"></span></h2>
                 <div class="progress-section">
                     <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
                     <div class="progress-info"><span id="progress-count">0 / 0</span><span id="progress-pct">0%</span></div>
@@ -488,7 +498,22 @@
             showStep('preview');
         }
 
-        $('#start-btn').addEventListener('click', async () => { await fetch(`/start/${currentJobId}`, { method: 'POST' }); showStep('progress'); pollInterval = setInterval(pollStatus, 1000); });
+        // Mode toggle styling
+        document.querySelectorAll('input[name="scrape-mode"]').forEach(radio => {
+            radio.addEventListener('change', () => {
+                const fast = radio.value === 'fast';
+                $('#mode-fast-label').style.cssText = fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
+                $('#mode-full-label').style.cssText = !fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
+                $('#mode-desc').textContent = fast ? '10 parallel workers · skips Playwright, FB ads, social, crawl · ~10-15s/site' : '3 parallel workers · full Playwright + AI analysis · ~45-60s/site';
+            });
+        });
+
+        $('#start-btn').addEventListener('click', async () => {
+            const mode = document.querySelector('input[name="scrape-mode"]:checked').value;
+            await fetch(`/start/${currentJobId}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode}) });
+            showStep('progress');
+            pollInterval = setInterval(pollStatus, 1000);
+        });
 
         async function pollStatus() {
             const res = await fetch(`/status/${currentJobId}`);
@@ -499,6 +524,7 @@
             $('#progress-count').textContent = `${data.current} / ${data.total}`;
             $('#progress-pct').textContent = pct + '%';
             $('#current-url').textContent = data.current_url || '';
+            if (data.mode) { const mb = $('#mode-badge'); mb.textContent = data.mode.toUpperCase(); mb.className = data.mode === 'fast' ? 'badge badge-warn' : 'badge badge-ok'; }
             $('#stat-success').textContent = data.stats.success || 0;
             $('#stat-failed').textContent = data.stats.failed || 0;
             $('#stat-skipped').textContent = data.stats.no_url || 0;

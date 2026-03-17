@@ -9,7 +9,8 @@ import threading
 from datetime import datetime
 
 from flask import Flask, render_template, request, jsonify, send_file
-from scraper import scrape_website, normalize_url, HAS_PLAYWRIGHT, HAS_CLAUDE, PAGESPEED_API_KEY, ANTHROPIC_API_KEY
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from scraper import scrape_website, normalize_url, HAS_PLAYWRIGHT, HAS_CLAUDE, PAGESPEED_API_KEY, ANTHROPIC_API_KEY, MAX_WORKERS_FAST
 
 import pandas as pd
 
@@ -32,8 +33,19 @@ def find_website_column(columns):
     return None
 
 
-def run_scrape_job(job_id, input_path):
-    """Run scraping in background thread."""
+def _flatten_intel(intel):
+    """Flatten intel dict for CSV output."""
+    flat = {}
+    for key, value in intel.items():
+        if isinstance(value, (list, dict)):
+            flat[f"enriched_{key}"] = json.dumps(value)
+        else:
+            flat[f"enriched_{key}"] = value
+    return flat
+
+
+def run_scrape_job(job_id, input_path, fast=False):
+    """Run scraping in background thread. fast=True uses parallel processing."""
     try:
         df = pd.read_csv(input_path)
         website_col = find_website_column(df.columns)
@@ -43,34 +55,59 @@ def run_scrape_job(job_id, input_path):
             jobs[job_id]["error"] = f"No website column found. Columns: {list(df.columns)}"
             return
 
-        jobs[job_id]["total"] = len(df)
+        total = len(df)
+        jobs[job_id]["total"] = total
         jobs[job_id]["website_col"] = website_col
-        results = []
+        jobs[job_id]["mode"] = "fast" if fast else "full"
 
+        # Build list of (index, url) pairs
+        url_tasks = []
+        skip_indices = set()
         for idx, row in df.iterrows():
-            if jobs[job_id].get("cancelled"):
-                break
-
             url = str(row[website_col]).strip()
-            jobs[job_id]["current"] = idx + 1
-            jobs[job_id]["current_url"] = url if url.lower() not in ("nan", "none", "") else "—"
-
             if not url or url.lower() in ("nan", "none", ""):
-                results.append({"enriched_scrape_status": "no_url"})
-                continue
+                skip_indices.add(idx)
+            else:
+                url_tasks.append((idx, url))
 
-            intel = scrape_website(url)
-            flat = {}
-            for key, value in intel.items():
-                if isinstance(value, (list, dict)):
-                    flat[f"enriched_{key}"] = json.dumps(value)
-                else:
-                    flat[f"enriched_{key}"] = value
-            results.append(flat)
+        # Pre-fill results dict with blanks for skipped rows
+        results_dict = {}
+        for idx in skip_indices:
+            results_dict[idx] = {"enriched_scrape_status": "no_url"}
 
-            # Update stats
-            status = intel.get("scrape_status", "unknown")
-            jobs[job_id]["stats"][status] = jobs[job_id]["stats"].get(status, 0) + 1
+        workers = MAX_WORKERS_FAST if fast else 3
+
+        def _scrape_one(idx, url):
+            return idx, scrape_website(url, fast=fast)
+
+        with ThreadPoolExecutor(max_workers=workers) as executor:
+            futures = {}
+            for idx, url in url_tasks:
+                if jobs[job_id].get("cancelled"):
+                    break
+                fut = executor.submit(_scrape_one, idx, url)
+                futures[fut] = (idx, url)
+
+            for fut in as_completed(futures):
+                if jobs[job_id].get("cancelled"):
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+
+                idx, url = futures[fut]
+                try:
+                    _, intel = fut.result()
+                    results_dict[idx] = _flatten_intel(intel)
+                    status = intel.get("scrape_status", "unknown")
+                    jobs[job_id]["stats"][status] = jobs[job_id]["stats"].get(status, 0) + 1
+                except Exception as e:
+                    results_dict[idx] = {"enriched_scrape_status": "error", "enriched_error": str(e)}
+                    jobs[job_id]["stats"]["error"] = jobs[job_id]["stats"].get("error", 0) + 1
+
+                jobs[job_id]["current"] = len(results_dict)
+                jobs[job_id]["current_url"] = url
+
+        # Reassemble in original row order
+        results = [results_dict.get(i, {}) for i in range(total)]
 
         enriched_df = pd.DataFrame(results)
         output_df = pd.concat([df.reset_index(drop=True), enriched_df], axis=1)
@@ -172,20 +209,24 @@ def start(job_id):
     if not os.path.exists(filepath):
         return jsonify({"error": "Job not found"}), 404
 
+    data = request.get_json(silent=True) or {}
+    fast = data.get("mode", "fast") == "fast"  # Default to fast for CSV batches
+
     jobs[job_id] = {
         "status": "running",
         "total": 0,
         "current": 0,
         "current_url": "",
         "stats": {},
+        "mode": "fast" if fast else "full",
         "started_at": datetime.now().isoformat(),
     }
 
-    thread = threading.Thread(target=run_scrape_job, args=(job_id, filepath))
+    thread = threading.Thread(target=run_scrape_job, args=(job_id, filepath, fast))
     thread.daemon = True
     thread.start()
 
-    return jsonify({"status": "started"})
+    return jsonify({"status": "started", "mode": "fast" if fast else "full"})
 
 
 @app.route("/status/<job_id>")

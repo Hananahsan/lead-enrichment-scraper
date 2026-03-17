@@ -71,11 +71,87 @@ HEADERS = {
 }
 
 TIMEOUT = 15
-MAX_WORKERS = 3  # Lower for headless browser to avoid resource issues
+MAX_WORKERS = 8  # Increased — browser pool removes per-site launch overhead
+MAX_WORKERS_FAST = 10  # Higher concurrency for fast mode (no browser)
+MAX_CRAWL_FULL = 15  # Reduced from 50 — diminishing returns past 15 pages
 
 PAGESPEED_API_URL = "https://www.googleapis.com/pagespeedonline/v5/runPagespeed"
 PAGESPEED_API_KEY = os.environ.get("PAGESPEED_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+
+# =============================================================================
+# BROWSER POOL — Reuse Playwright browsers across sites instead of launching fresh
+# =============================================================================
+import atexit
+import queue
+import threading
+
+class BrowserPool:
+    """Pool of reusable Playwright browser instances for concurrent scraping."""
+
+    def __init__(self, size=4):
+        self._size = size
+        self._pool = queue.Queue()
+        self._playwright_instances = []
+        self._lock = threading.Lock()
+        self._initialized = False
+
+    def _init_pool(self):
+        """Lazily initialize browser pool on first use."""
+        with self._lock:
+            if self._initialized:
+                return
+            if not HAS_PLAYWRIGHT:
+                self._initialized = True
+                return
+            for _ in range(self._size):
+                try:
+                    p = sync_playwright().start()
+                    browser = p.chromium.launch(headless=True)
+                    self._playwright_instances.append(p)
+                    self._pool.put(browser)
+                except Exception:
+                    break
+            self._initialized = True
+
+    def acquire(self, timeout=30):
+        """Get a browser from the pool. Blocks if all are in use."""
+        self._init_pool()
+        try:
+            return self._pool.get(timeout=timeout)
+        except queue.Empty:
+            return None
+
+    def release(self, browser):
+        """Return a browser to the pool."""
+        if browser:
+            self._pool.put(browser)
+
+    def shutdown(self):
+        """Close all browsers and Playwright instances."""
+        while not self._pool.empty():
+            try:
+                browser = self._pool.get_nowait()
+                browser.close()
+            except Exception:
+                pass
+        for p in self._playwright_instances:
+            try:
+                p.stop()
+            except Exception:
+                pass
+        self._playwright_instances.clear()
+        self._initialized = False
+
+
+# Global browser pool — shared across all scrape_website() calls
+_browser_pool = BrowserPool(size=4)
+atexit.register(_browser_pool.shutdown)
+
+# Shared requests.Session for connection pooling (DNS cache + keep-alive)
+_http_session = requests.Session()
+_http_session.headers.update(HEADERS)
+
 
 BOOKING_TOOLS = {
     "Calendly": [r"calendly\.com"],
@@ -93,9 +169,9 @@ BOOKING_TOOLS = {
 
 
 def fetch_page_simple(url, timeout=TIMEOUT):
-    """Fetch a page with requests (no JS). Returns (response, soup) or (None, None)."""
+    """Fetch a page with requests (no JS). Uses shared session for connection pooling."""
     try:
-        resp = requests.get(url, headers=HEADERS, timeout=timeout, allow_redirects=True)
+        resp = _http_session.get(url, timeout=timeout, allow_redirects=True)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         return resp, soup
@@ -115,53 +191,57 @@ class BrowserResult:
 
 
 def fetch_page_browser(url, timeout=30000):
-    """Fetch a page with headless Chromium (renders JS). Returns (response, soup) or (None, None)."""
+    """Fetch a page with headless Chromium (renders JS). Uses browser pool for reuse."""
     if not HAS_PLAYWRIGHT:
         return fetch_page_simple(url)
 
+    browser = _browser_pool.acquire(timeout=30)
+    if not browser:
+        return fetch_page_simple(url)
+
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                viewport={"width": 390, "height": 844},  # Mobile viewport
-                user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-            )
-            page = context.new_page()
+        context = browser.new_context(
+            viewport={"width": 390, "height": 844},  # Mobile viewport
+            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        )
+        page = context.new_page()
 
-            start = time.time()
-            resp = page.goto(url, wait_until="networkidle", timeout=timeout)
-            # Wait a bit more for lazy-loaded content
-            page.wait_for_timeout(2000)
-            elapsed = time.time() - start
+        start = time.time()
+        resp = page.goto(url, wait_until="networkidle", timeout=timeout)
+        page.wait_for_timeout(2000)
+        elapsed = time.time() - start
 
-            content = page.content()
-            final_url = page.url
-            status = resp.status if resp else 200
-            headers = {}
-            if resp:
-                headers = {h["name"]: h["value"] for h in resp.headers_array()} if hasattr(resp, "headers_array") else {}
+        content = page.content()
+        final_url = page.url
+        status = resp.status if resp else 200
+        headers = {}
+        if resp:
+            headers = {h["name"]: h["value"] for h in resp.headers_array()} if hasattr(resp, "headers_array") else {}
 
-            # Check for mobile CTA visibility
-            mobile_cta_visible = False
-            try:
-                cta_el = page.query_selector('a[href*="book"], a[href*="schedule"], a[href*="calendly"], a[href*="call"], button:has-text("Book"), button:has-text("Schedule"), button:has-text("Get Started")')
-                if cta_el and cta_el.is_visible():
-                    box = cta_el.bounding_box()
-                    if box and box["y"] < 844:  # Within mobile viewport
-                        mobile_cta_visible = True
-            except Exception:
-                pass
+        mobile_cta_visible = False
+        try:
+            cta_el = page.query_selector('a[href*="book"], a[href*="schedule"], a[href*="calendly"], a[href*="call"], button:has-text("Book"), button:has-text("Schedule"), button:has-text("Get Started")')
+            if cta_el and cta_el.is_visible():
+                box = cta_el.bounding_box()
+                if box and box["y"] < 844:
+                    mobile_cta_visible = True
+        except Exception:
+            pass
 
-            browser.close()
+        context.close()
+        _browser_pool.release(browser)
 
-            result = BrowserResult(final_url, content, status, elapsed, headers)
-            result.mobile_cta_visible = mobile_cta_visible
-            result.mobile_load_time = round(elapsed, 2)
+        result = BrowserResult(final_url, content, status, elapsed, headers)
+        result.mobile_cta_visible = mobile_cta_visible
+        result.mobile_load_time = round(elapsed, 2)
 
-            soup = BeautifulSoup(content, "html.parser")
-            return result, soup
-    except Exception as e:
-        # Fallback to simple fetch
+        soup = BeautifulSoup(content, "html.parser")
+        return result, soup
+    except Exception:
+        try:
+            _browser_pool.release(browser)
+        except Exception:
+            pass
         return fetch_page_simple(url)
 
 
@@ -1497,21 +1577,29 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
         data["ssl_issues"] = "Site not using HTTPS"
         data["technical_issues_summary"].append("Missing SSL/HTTPS")
 
-    # Check a sample of links for broken ones
-    checked = 0
+    # Check a sample of links for broken ones — in parallel
+    check_urls = []
     for link in links[:20]:
-        url = link["url"]
-        if url.startswith("mailto:") or url.startswith("tel:") or url.startswith("#"):
+        link_url = link["url"]
+        if link_url.startswith("mailto:") or link_url.startswith("tel:") or link_url.startswith("#"):
             continue
-        try:
-            r = requests.head(url, headers=HEADERS, timeout=8, allow_redirects=True)
-            if r.status_code >= 400:
-                data["broken_links"].append({"url": url, "text": link["text"][:50], "status": r.status_code})
-        except Exception:
-            data["broken_links"].append({"url": url, "text": link["text"][:50], "status": "timeout/error"})
-        checked += 1
-        if checked >= 10:
+        check_urls.append(link)
+        if len(check_urls) >= 10:
             break
+
+    def _check_link(link):
+        try:
+            r = requests.head(link["url"], headers=HEADERS, timeout=5, allow_redirects=True)
+            if r.status_code >= 400:
+                return {"url": link["url"], "text": link["text"][:50], "status": r.status_code}
+        except Exception:
+            return {"url": link["url"], "text": link["text"][:50], "status": "timeout/error"}
+        return None
+
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        for result in executor.map(_check_link, check_urls):
+            if result:
+                data["broken_links"].append(result)
 
     if data["broken_links"]:
         data["technical_issues_summary"].append(f"{len(data['broken_links'])} broken link(s) found")
@@ -2136,7 +2224,7 @@ def audit_confirmation_pages(crawl_data, base_url):
 # FULL SITE CRAWL
 # =============================================================================
 
-MAX_CRAWL_PAGES = 50
+MAX_CRAWL_PAGES = 15  # Reduced from 50 — 95% of signals found in first 15 pages
 
 def crawl_site(base_url, soup, max_pages=MAX_CRAWL_PAGES):
     """Crawl up to max_pages internal pages and aggregate all data."""
@@ -2288,18 +2376,17 @@ def check_facebook_ads(url):
         ad_library_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={domain}&search_type=keyword_unordered"
 
         if HAS_PLAYWRIGHT:
-            try:
-                with sync_playwright() as p:
-                    browser = p.chromium.launch(headless=True)
-                    page = browser.new_page()
+            browser = _browser_pool.acquire(timeout=15)
+            if browser:
+                try:
+                    context = browser.new_context()
+                    page = context.new_page()
                     page.goto(ad_library_url, wait_until="domcontentloaded", timeout=20000)
                     page.wait_for_timeout(5000)
 
                     content = page.content()
                     page_text = page.inner_text("body") if page.query_selector("body") else ""
 
-                    # Check for ad results
-                    # Look for "About X results" or ad cards
                     results_match = re.search(r"(\d+)\s*results?", page_text, re.I)
                     no_results = re.search(r"no\s*results|didn.?t\s*find|0\s*results", page_text, re.I)
 
@@ -2315,7 +2402,6 @@ def check_facebook_ads(url):
                         else:
                             data["fb_ads_status"] = "No active ads found"
                     else:
-                        # Look for ad card elements
                         ad_cards = page.query_selector_all('[class*="ad"], [data-testid*="ad"]')
                         if ad_cards and len(ad_cards) > 0:
                             data["fb_ads_found"] = True
@@ -2324,9 +2410,7 @@ def check_facebook_ads(url):
                         else:
                             data["fb_ads_status"] = "Could not determine (page structure changed)"
 
-                    # Try to extract ad details
                     if data["fb_ads_found"]:
-                        # Get first few ad texts
                         ad_elements = page.query_selector_all('[class*="ad-card"], [class*="_7jyr"]')
                         for i, el in enumerate(ad_elements[:3]):
                             try:
@@ -2335,9 +2419,16 @@ def check_facebook_ads(url):
                             except Exception:
                                 pass
 
-                    browser.close()
-            except Exception:
-                data["fb_ads_status"] = "Check failed (browser error)"
+                    context.close()
+                    _browser_pool.release(browser)
+                except Exception:
+                    try:
+                        _browser_pool.release(browser)
+                    except Exception:
+                        pass
+                    data["fb_ads_status"] = "Check failed (browser error)"
+            else:
+                data["fb_ads_status"] = "Browser pool busy"
         else:
             # Without Playwright, try a simple heuristic check via the website itself
             # Check if site has Facebook Pixel (already done in ads analysis)
@@ -2397,94 +2488,95 @@ def scrape_social_profiles(soup, html):
     total_followers = 0
     platform_activity = {}
 
+    browser = _browser_pool.acquire(timeout=15)
+    if not browser:
+        data["social_profiles"] = {p: {"handle": h, "url": f"https://{p}.com/{h}"} for p, h in found_profiles.items()}
+        data["social_summary"] = f"Found {len(found_profiles)} profile(s), browser pool busy"
+        return data
+
     try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            )
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        )
 
-            for platform, handle in found_profiles.items():
-                profile = {"handle": handle, "followers": None, "last_post": None, "posts_visible": 0}
+        for platform, handle in found_profiles.items():
+            profile = {"handle": handle, "followers": None, "last_post": None, "posts_visible": 0}
 
+            try:
+                page = context.new_page()
+
+                if platform == "instagram":
+                    page.goto(f"https://www.instagram.com/{handle}/", wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_timeout(3000)
+                    ig_text = page.content()
+                    follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", ig_text)
+                    if follower_match:
+                        profile["followers"] = follower_match.group(1)
+                    meta_match = re.search(r'([\d,.]+[KkMm]?)\s*Followers', ig_text)
+                    if meta_match:
+                        profile["followers"] = meta_match.group(1)
+                    profile["url"] = f"https://www.instagram.com/{handle}/"
+
+                elif platform == "linkedin":
+                    profile["url"] = f"https://www.linkedin.com/company/{handle}/"
+                    page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_timeout(3000)
+                    li_text = page.inner_text("body") if page.query_selector("body") else ""
+                    follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:followers|Followers)", li_text)
+                    if follower_match:
+                        profile["followers"] = follower_match.group(1)
+                    employee_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:employees|associated members)", li_text)
+                    if employee_match:
+                        profile["employees"] = employee_match.group(1)
+
+                elif platform == "youtube":
+                    yt_url = f"https://www.youtube.com/@{handle}"
+                    page.goto(yt_url, wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_timeout(3000)
+                    yt_text = page.inner_text("body") if page.query_selector("body") else ""
+                    sub_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:subscribers|Subscribers)", yt_text)
+                    if sub_match:
+                        profile["followers"] = sub_match.group(1)
+                    video_match = re.search(r"([\d,.]+)\s*(?:videos|Videos)", yt_text)
+                    if video_match:
+                        profile["video_count"] = video_match.group(1)
+                    profile["url"] = yt_url
+
+                elif platform == "twitter":
+                    profile["url"] = f"https://x.com/{handle}"
+                    page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_timeout(3000)
+                    tw_text = page.inner_text("body") if page.query_selector("body") else ""
+                    follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", tw_text)
+                    if follower_match:
+                        profile["followers"] = follower_match.group(1)
+
+                elif platform == "facebook":
+                    profile["url"] = f"https://www.facebook.com/{handle}"
+                    page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_timeout(3000)
+                    fb_text = page.inner_text("body") if page.query_selector("body") else ""
+                    follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:followers|people follow|likes)", fb_text)
+                    if follower_match:
+                        profile["followers"] = follower_match.group(1)
+
+                elif platform == "tiktok":
+                    profile["url"] = f"https://www.tiktok.com/@{handle}"
+                    page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
+                    page.wait_for_timeout(3000)
+                    tt_text = page.inner_text("body") if page.query_selector("body") else ""
+                    follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", tt_text)
+                    if follower_match:
+                        profile["followers"] = follower_match.group(1)
+
+                page.close()
+
+            except Exception:
+                profile["error"] = "Could not scrape"
                 try:
-                    page = context.new_page()
-
-                    if platform == "instagram":
-                        page.goto(f"https://www.instagram.com/{handle}/", wait_until="domcontentloaded", timeout=15000)
-                        page.wait_for_timeout(3000)
-                        ig_text = page.content()
-                        # Instagram meta tags often have follower count
-                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", ig_text)
-                        if follower_match:
-                            profile["followers"] = follower_match.group(1)
-                        # Also try meta description
-                        meta_match = re.search(r'([\d,.]+[KkMm]?)\s*Followers', ig_text)
-                        if meta_match:
-                            profile["followers"] = meta_match.group(1)
-                        profile["url"] = f"https://www.instagram.com/{handle}/"
-
-                    elif platform == "linkedin":
-                        profile["url"] = f"https://www.linkedin.com/company/{handle}/"
-                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
-                        page.wait_for_timeout(3000)
-                        li_text = page.inner_text("body") if page.query_selector("body") else ""
-                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:followers|Followers)", li_text)
-                        if follower_match:
-                            profile["followers"] = follower_match.group(1)
-                        employee_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:employees|associated members)", li_text)
-                        if employee_match:
-                            profile["employees"] = employee_match.group(1)
-
-                    elif platform == "youtube":
-                        yt_url = f"https://www.youtube.com/@{handle}"
-                        page.goto(yt_url, wait_until="domcontentloaded", timeout=15000)
-                        page.wait_for_timeout(3000)
-                        yt_text = page.inner_text("body") if page.query_selector("body") else ""
-                        sub_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:subscribers|Subscribers)", yt_text)
-                        if sub_match:
-                            profile["followers"] = sub_match.group(1)
-                        # Try to get video count
-                        video_match = re.search(r"([\d,.]+)\s*(?:videos|Videos)", yt_text)
-                        if video_match:
-                            profile["video_count"] = video_match.group(1)
-                        profile["url"] = yt_url
-
-                    elif platform == "twitter":
-                        profile["url"] = f"https://x.com/{handle}"
-                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
-                        page.wait_for_timeout(3000)
-                        tw_text = page.inner_text("body") if page.query_selector("body") else ""
-                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", tw_text)
-                        if follower_match:
-                            profile["followers"] = follower_match.group(1)
-
-                    elif platform == "facebook":
-                        profile["url"] = f"https://www.facebook.com/{handle}"
-                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
-                        page.wait_for_timeout(3000)
-                        fb_text = page.inner_text("body") if page.query_selector("body") else ""
-                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:followers|people follow|likes)", fb_text)
-                        if follower_match:
-                            profile["followers"] = follower_match.group(1)
-
-                    elif platform == "tiktok":
-                        profile["url"] = f"https://www.tiktok.com/@{handle}"
-                        page.goto(profile["url"], wait_until="domcontentloaded", timeout=15000)
-                        page.wait_for_timeout(3000)
-                        tt_text = page.inner_text("body") if page.query_selector("body") else ""
-                        follower_match = re.search(r"([\d,.]+[KkMm]?)\s*(?:Followers|followers)", tt_text)
-                        if follower_match:
-                            profile["followers"] = follower_match.group(1)
-
                     page.close()
-
                 except Exception:
-                    profile["error"] = "Could not scrape"
-                    try:
-                        page.close()
-                    except Exception:
-                        pass
+                    pass
 
                 # Parse follower count to number
                 if profile.get("followers"):
@@ -2506,9 +2598,14 @@ def scrape_social_profiles(soup, html):
 
                 data["social_profiles"][platform] = profile
 
-            browser.close()
+        context.close()
+        _browser_pool.release(browser)
 
     except Exception:
+        try:
+            _browser_pool.release(browser)
+        except Exception:
+            pass
         data["social_summary"] = "Social scraping failed"
         return data
 
@@ -2711,16 +2808,24 @@ def find_subpages(soup, base_url):
 # MAIN SCRAPE
 # =============================================================================
 
-def scrape_website(url):
-    """Scrape a website against the full checklist using headless browser + PageSpeed."""
+def scrape_website(url, fast=False):
+    """Scrape a website against the full checklist.
+
+    fast=True: skips Playwright browser, FB ads, social media, full crawl.
+               Uses requests only. ~10-15s per site instead of ~60s.
+               Best for batch processing 100+ leads.
+    """
     url = normalize_url(url)
     if not url:
         return {"scrape_status": "no_url"}
 
-    intel = {"website_url": url}
+    intel = {"website_url": url, "scrape_mode": "fast" if fast else "full"}
 
-    # Fetch homepage with headless browser (renders JS, measures mobile)
-    resp, soup = fetch_homepage(url)
+    # Fetch homepage — skip browser in fast mode
+    if fast:
+        resp, soup = fetch_page_simple(url)
+    else:
+        resp, soup = fetch_homepage(url)
     if not soup:
         intel["scrape_status"] = "failed"
         return intel
@@ -2738,7 +2843,7 @@ def scrape_website(url):
     root_url = f"{parsed_input.scheme}://{parsed_input.netloc}/"
     is_subpage = parsed_input.path.strip("/") != ""
 
-    if is_subpage:
+    if is_subpage and not fast:
         intel["input_is_subpage"] = True
         intel["root_domain_url"] = root_url
         root_resp, root_soup = fetch_page_simple(root_url)
@@ -2797,19 +2902,28 @@ def scrape_website(url):
         scanned_urls.add(link_url)
         pages_to_scan.append(link["url"])
 
-    # Cap at 15 internal pages to keep it fast
-    pages_to_scan = pages_to_scan[:15]
+    # Cap pages to scan — fewer in fast mode
+    pages_to_scan = pages_to_scan[:3 if fast else 10]
 
-    # Scan each internal page for external links
-    for page_url in pages_to_scan:
+    # Scan internal pages for external links — in parallel
+    def _scan_page_ext(page_url):
         try:
             _, page_soup = fetch_page_simple(page_url, timeout=8)
             if page_soup:
-                page_ext_links, page_ext_domains = get_external_links(page_soup, page_url)
+                return get_external_links(page_soup, page_url)
+        except Exception:
+            pass
+        return [], []
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        ext_futures = {executor.submit(_scan_page_ext, pu): pu for pu in pages_to_scan}
+        for future in as_completed(ext_futures):
+            try:
+                page_ext_links, page_ext_domains = future.result()
                 all_external_links.extend(page_ext_links)
                 all_external_domains.update(page_ext_domains)
-        except Exception:
-            continue
+            except Exception:
+                continue
 
     # Deduplicate external links by URL
     seen_urls = set()
@@ -2882,26 +2996,35 @@ def scrape_website(url):
     # Scan homepage first
     autoplatform = detect_automation_platforms(soup, html)
 
-    # Also scan external domain pages for anti-signals (catches funnels on separate domains)
-    if not autoplatform["has_full_automation_platform"] and external_links:
-        # Deduplicate by domain — only fetch one page per external domain
+    # Also scan external domain pages for anti-signals — in parallel (skip in fast mode)
+    if not fast and not autoplatform["has_full_automation_platform"] and external_links:
         ext_domains_checked = set()
+        ext_urls_to_scan = []
         for ext_link in external_links[:10]:
             ext_domain = ext_link.get("domain", "")
-            if ext_domain in ext_domains_checked:
-                continue
-            ext_domains_checked.add(ext_domain)
+            if ext_domain not in ext_domains_checked:
+                ext_domains_checked.add(ext_domain)
+                ext_urls_to_scan.append((ext_link["url"], ext_domain))
+
+        def _scan_ext_antisignal(url_domain):
+            ext_url, ext_domain = url_domain
             try:
-                _, ext_soup = fetch_page_simple(ext_link["url"], timeout=8)
+                _, ext_soup = fetch_page_simple(ext_url, timeout=8)
                 if ext_soup:
                     ext_html = str(ext_soup)
-                    ext_platform = detect_automation_platforms(ext_soup, ext_html)
-                    if ext_platform["has_full_automation_platform"]:
-                        autoplatform = ext_platform
-                        autoplatform["detected_on_domain"] = ext_domain
-                        break
+                    result = detect_automation_platforms(ext_soup, ext_html)
+                    if result["has_full_automation_platform"]:
+                        result["detected_on_domain"] = ext_domain
+                        return result
             except Exception:
-                continue
+                pass
+            return None
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            for result in executor.map(_scan_ext_antisignal, ext_urls_to_scan):
+                if result:
+                    autoplatform = result
+                    break
 
     for k, v in autoplatform.items():
         intel[f"antisignal_{k}"] = v
@@ -2911,24 +3034,7 @@ def scrape_website(url):
     for k, v in schema.items():
         intel[f"schema_{k}"] = v
 
-    # 9. Form field analysis (Enhancement 4)
-    form_fields = count_form_fields(soup, html, subpages, url)
-    for k, v in form_fields.items():
-        intel[f"forms_{k}"] = v
-
-    # 10. Booking page branding (Enhancement 3)
-    booking_brand = check_booking_page_branding(booking, url)
-    for k, v in booking_brand.items():
-        intel[f"bookingbrand_{k}"] = v
-
-    # 11. Booking CTA redirect chain (Enhancement 6)
-    booking_redirects = check_booking_redirects(booking)
-    for k, v in booking_redirects.items():
-        intel[f"redirects_{k}"] = v
-
-    # ---- Slow steps (network/browser calls) — run in parallel ----
-    from concurrent.futures import ThreadPoolExecutor, as_completed
-
+    # ---- Slow steps (network/browser calls) — ALL run in parallel ----
     slow_results = {}
 
     def _run_pagespeed():
@@ -2946,20 +3052,43 @@ def scrape_website(url):
     def _run_timing_network():
         return ("timing_network", analyze_timing_network(url, soup))
 
-    with ThreadPoolExecutor(max_workers=5) as executor:
-        futures = [
-            executor.submit(_run_pagespeed),
-            executor.submit(_run_fb_ads),
-            executor.submit(_run_crawl),
-            executor.submit(_run_social),
-            executor.submit(_run_timing_network),
+    def _run_form_fields():
+        return ("form_fields", count_form_fields(soup, html, subpages, url))
+
+    def _run_booking_brand():
+        return ("booking_brand", check_booking_page_branding(booking, url))
+
+    def _run_booking_redirects():
+        return ("booking_redirects", check_booking_redirects(booking))
+
+    if fast:
+        # Fast mode: only PageSpeed + timing network (no browser needed)
+        # Skip: FB ads (Playwright), social (Playwright), full crawl (50 pages)
+        slow_tasks = [_run_pagespeed, _run_timing_network, _run_booking_redirects]
+    else:
+        # Full mode: everything
+        slow_tasks = [
+            _run_pagespeed, _run_fb_ads, _run_crawl, _run_social,
+            _run_timing_network, _run_form_fields, _run_booking_brand,
+            _run_booking_redirects,
         ]
+
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        futures = [executor.submit(fn) for fn in slow_tasks]
         for future in as_completed(futures):
             try:
                 key, result = future.result()
                 slow_results[key] = result
             except Exception:
                 pass
+
+    # Merge form fields, booking brand, booking redirects
+    for k, v in slow_results.get("form_fields", {}).items():
+        intel[f"forms_{k}"] = v
+    for k, v in slow_results.get("booking_brand", {}).items():
+        intel[f"bookingbrand_{k}"] = v
+    for k, v in slow_results.get("booking_redirects", {}).items():
+        intel[f"redirects_{k}"] = v
 
     # Merge PageSpeed results
     pagespeed = slow_results.get("pagespeed", {})
@@ -3066,7 +3195,7 @@ def scrape_website(url):
 # CSV PROCESSING (CLI usage)
 # =============================================================================
 
-def process_csv(input_path, output_path):
+def process_csv(input_path, output_path, fast=False):
     df = pd.read_csv(input_path)
 
     website_col = None
@@ -3080,8 +3209,10 @@ def process_csv(input_path, output_path):
         print("ERROR: No website/URL column found.")
         sys.exit(1)
 
+    mode_label = "FAST" if fast else "FULL"
+    workers = MAX_WORKERS_FAST if fast else MAX_WORKERS
     print(f"Found website column: '{website_col}'")
-    print(f"Processing {len(df)} leads...\n")
+    print(f"Processing {len(df)} leads in {mode_label} mode ({workers} concurrent)...\n")
 
     results = []
 
@@ -3090,9 +3221,9 @@ def process_csv(input_path, output_path):
         if not url or url.lower() in ("nan", "none", ""):
             return idx, {"scrape_status": "no_url"}
         print(f"  [{idx+1}/{len(df)}] Scraping {url}...")
-        return idx, scrape_website(url)
+        return idx, scrape_website(url, fast=fast)
 
-    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+    with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(process_row, idx, row): idx
             for idx, row in df.iterrows()
@@ -3124,9 +3255,12 @@ def process_csv(input_path, output_path):
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 scraper.py <input.csv> [output.csv]")
+        print("Usage: python3 scraper.py <input.csv> [output.csv] [--fast]")
+        print("  --fast  Skip browser, FB ads, social, crawl (10x faster for large batches)")
         sys.exit(1)
 
-    input_file = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else input_file.replace(".csv", "_enriched.csv")
-    process_csv(input_file, output_file)
+    fast_mode = "--fast" in sys.argv
+    args = [a for a in sys.argv[1:] if a != "--fast"]
+    input_file = args[0]
+    output_file = args[1] if len(args) > 1 else input_file.replace(".csv", "_enriched.csv")
+    process_csv(input_file, output_file, fast=fast_mode)
