@@ -2761,8 +2761,41 @@ def scrape_website(url):
 
     intel["subpages_found"] = list(subpages.keys())
 
-    # Discover external domains (reveals multi-domain funnels)
-    external_links, external_domains = get_external_links(soup, url)
+    # Discover external domains — scan homepage AND all discovered subpages
+    all_external_links = []
+    all_external_domains = set()
+
+    # Scan homepage
+    homepage_ext_links, homepage_ext_domains = get_external_links(soup, url)
+    all_external_links.extend(homepage_ext_links)
+    all_external_domains.update(homepage_ext_domains)
+
+    # Only scan subpages likely to contain funnel links
+    FUNNEL_RELEVANT_SUBPAGES = ["about", "pricing", "services", "contact", "testimonials"]
+
+    for subpage_key, subpage_url in subpages.items():
+        if subpage_key not in FUNNEL_RELEVANT_SUBPAGES:
+            continue
+        try:
+            _, subpage_soup = fetch_page_simple(subpage_url, timeout=8)
+            if subpage_soup:
+                sub_ext_links, sub_ext_domains = get_external_links(subpage_soup, subpage_url)
+                all_external_links.extend(sub_ext_links)
+                all_external_domains.update(sub_ext_domains)
+        except Exception:
+            continue
+
+    # Deduplicate external links by URL
+    seen_urls = set()
+    deduped_external_links = []
+    for link in all_external_links:
+        if link["url"] not in seen_urls:
+            seen_urls.add(link["url"])
+            deduped_external_links.append(link)
+
+    external_links = deduped_external_links
+    external_domains = list(all_external_domains)
+
     intel["external_domains"] = external_domains
     intel["external_link_count"] = len(external_links)
 
