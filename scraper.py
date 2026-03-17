@@ -306,6 +306,82 @@ def get_all_links(soup, base_url):
     return links
 
 
+def get_external_links(soup, base_url):
+    """Get all external (cross-domain) links — reveals multi-domain funnels."""
+    external = []
+    base_parsed = urlparse(base_url)
+    base_domain = base_parsed.netloc.replace("www.", "")
+    seen_domains = set()
+
+    for a in soup.find_all("a", href=True):
+        href = a["href"]
+        full = urljoin(base_url, href)
+        parsed = urlparse(full)
+        ext_domain = parsed.netloc.replace("www.", "")
+
+        # Skip same domain, empty, anchors, mailto, tel
+        if not ext_domain or ext_domain == base_domain:
+            continue
+        if href.startswith(("mailto:", "tel:", "#", "javascript:")):
+            continue
+        # Skip common non-funnel externals
+        skip_domains = [
+            "facebook.com", "instagram.com", "twitter.com", "x.com",
+            "linkedin.com", "youtube.com", "youtu.be", "tiktok.com",
+            "pinterest.com", "apple.com", "spotify.com", "google.com",
+            "trustpilot.com", "g2.com",
+        ]
+        if any(sd in ext_domain for sd in skip_domains):
+            continue
+
+        text = a.get_text(strip=True)
+        external.append({
+            "text": text[:80],
+            "url": full,
+            "domain": ext_domain,
+        })
+        seen_domains.add(ext_domain)
+
+    return external, list(seen_domains)
+
+
+def detect_secondary_funnels(external_links, external_domains):
+    """Identify if prospect has a separate funnel/sales domain."""
+    data = {
+        "has_secondary_domain": False,
+        "secondary_domains": [],
+        "secondary_funnel_platform": "None",
+        "secondary_domain_links": [],
+    }
+
+    funnel_platforms = {
+        "ClickFunnels": ["clickfunnels.com", "myclickfunnels.com"],
+        "Kajabi": ["kajabi.com", "mykajabi.com"],
+        "Kartra": ["kartra.com"],
+        "ThriveCart": ["thrivecart.com"],
+        "Teachable": ["teachable.com"],
+        "Podia": ["podia.com"],
+        "Gumroad": ["gumroad.com"],
+        "Skool": ["skool.com"],
+        "Stan.store": ["stan.store"],
+    }
+
+    if external_domains:
+        data["has_secondary_domain"] = True
+        data["secondary_domains"] = external_domains[:10]
+        data["secondary_domain_links"] = external_links[:10]
+
+        # Check if any external links go to known funnel platforms
+        all_urls = " ".join(l["url"] for l in external_links)
+        for platform, domains in funnel_platforms.items():
+            for d in domains:
+                if d in all_urls:
+                    data["secondary_funnel_platform"] = platform
+                    break
+
+    return data
+
+
 # =============================================================================
 # 1. BOOKING INFRASTRUCTURE
 # =============================================================================
@@ -408,16 +484,44 @@ def analyze_booking(soup, html, links, base_url):
         data["clicks_to_book"] = "3+ (no obvious booking CTA on homepage)"
 
     # Verify booking links work
+    KNOWN_BOOKING_DOMAINS = [
+        "calendly.com", "acuityscheduling.com", "squareup.com",
+        "cal.com", "typeform.com", "meetings.hubspot.com",
+        "savvycal.com", "tidycal.com", "oncehub.com",
+        "scheduleonce.com", "dubsado.com", "booklikeaboss.com",
+        "youcanbook.me",
+    ]
+
     if booking_links:
         test_url = booking_links[0]["url"]
+        parsed_test = urlparse(test_url)
+        test_domain = parsed_test.netloc.replace("www.", "")
+
+        # Known booking tools often block HEAD requests — trust the link exists
+        is_known_tool = any(d in test_domain for d in KNOWN_BOOKING_DOMAINS)
+
         try:
+            # Try HEAD first
             r = requests.head(test_url, headers=HEADERS, timeout=10, allow_redirects=True)
             if r.status_code < 400:
                 data["booking_cta_works"] = "Yes"
+            elif is_known_tool and r.status_code in (400, 403, 405):
+                # Known tools often block HEAD — retry with GET
+                try:
+                    r2 = requests.get(test_url, headers=HEADERS, timeout=10, allow_redirects=True)
+                    if r2.status_code < 400:
+                        data["booking_cta_works"] = "Yes"
+                    else:
+                        data["booking_cta_works"] = f"Likely works (known tool, HTTP {r2.status_code} on GET — verify manually)"
+                except Exception:
+                    data["booking_cta_works"] = f"Likely works (known tool, connection issue — verify manually)"
             else:
-                data["booking_cta_works"] = f"Broken (HTTP {r.status_code})"
+                data["booking_cta_works"] = f"Possibly broken (HTTP {r.status_code} — verify manually)"
         except Exception:
-            data["booking_cta_works"] = "Broken (connection failed)"
+            if is_known_tool:
+                data["booking_cta_works"] = "Likely works (known tool, connection blocked — verify manually)"
+            else:
+                data["booking_cta_works"] = "Could not verify (connection failed)"
 
     return data
 
@@ -1376,6 +1480,7 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
         "placeholder_details": [],
         "conflicting_ctas": False,
         "cta_count": 0,
+        "cta_unique_actions": 0,
         "cta_list": [],
         "cta_destinations": [],
         "cta_unique_destinations": 0,
@@ -1444,23 +1549,43 @@ def analyze_technical_gaps(soup, text, html, resp, links, booking_data):
             data["placeholder_details"].append(desc)
             data["technical_issues_summary"].append(desc)
 
-    # Conflicting CTAs
+    # Conflicting CTAs — deduplicate by destination URL, not just text
     cta_patterns = re.compile(
         r"book|schedule|apply|enroll|sign.?up|get.?started|join|download|"
         r"buy.?now|purchase|subscribe|register|contact|free.?call",
         re.I,
     )
-    ctas = set()
+    cta_by_destination = {}  # url -> set of button texts
+    cta_texts = set()
     for el in soup.find_all(["a", "button"]):
         el_text = el.get_text(strip=True)
         if cta_patterns.search(el_text) and len(el_text) < 60:
-            ctas.add(el_text)
+            cta_texts.add(el_text)
+            href = el.get("href", "")
+            if href and not href.startswith(("#", "mailto:", "tel:", "javascript:")):
+                dest = urljoin(resp.url, href).rstrip("/").split("?")[0]  # normalize
+                if dest not in cta_by_destination:
+                    cta_by_destination[dest] = set()
+                cta_by_destination[dest].add(el_text)
 
-    data["cta_count"] = len(ctas)
-    data["cta_list"] = list(ctas)[:15]
-    if len(ctas) >= 5:
+    unique_destinations = len(cta_by_destination)
+    unique_texts = len(cta_texts)
+
+    data["cta_count"] = unique_texts
+    data["cta_unique_actions"] = unique_destinations
+    data["cta_list"] = list(cta_texts)[:15]
+
+    # Only flag as conflicting if there are 3+ DIFFERENT destinations
+    if unique_destinations >= 4:
         data["conflicting_ctas"] = True
-        data["technical_issues_summary"].append(f"{len(ctas)} different CTAs competing for attention")
+        data["technical_issues_summary"].append(
+            f"{unique_texts} CTAs pointing to {unique_destinations} different destinations"
+        )
+    elif unique_destinations >= 2 and unique_texts >= 5:
+        data["conflicting_ctas"] = "Mild"
+        data["technical_issues_summary"].append(
+            f"{unique_texts} CTA buttons but only {unique_destinations} unique destinations — reinforcement, not confusion"
+        )
 
     # CTA destination tracking (Enhancement 5)
     cta_destinations = []
@@ -2409,6 +2534,8 @@ def scrape_social_profiles(soup, html):
 def generate_ai_analysis(intel):
     """Use Claude to generate a natural-language audit summary with outreach hooks."""
     data = {
+        "classification": "",
+        "icp_fit": "",
         "audit_summary": "",
         "positioning_gaps": "",
         "outreach_hooks": "",
@@ -2464,14 +2591,40 @@ def generate_ai_analysis(intel):
     summary_parts.append(f"Booking redirect hops: {intel.get('redirects_booking_redirect_count', 0)}")
     summary_parts.append(f"Schema markup: {intel.get('schema_has_business_schema', 'N/A')}")
 
+    # Add external domain and confidence data to summary
+    summary_parts.append(f"External domains linked: {intel.get('external_domains', [])}")
+    summary_parts.append(f"Secondary funnel platform: {intel.get('funnel_secondary_funnel_platform', 'None')}")
+    summary_parts.append(f"Has secondary domain: {intel.get('funnel_has_secondary_domain', False)}")
+    summary_parts.append(f"DATA CONFIDENCE: PageSpeed=HIGH, Booking link status=LOW (automated check, may be wrong), FB ads=HIGH, Social followers=MEDIUM")
+
     site_data = "\n".join(summary_parts)
 
-    prompt = f"""You are a coaching business analyst. Analyze this website audit data for a coaching/consulting business and provide a concise, actionable report.
+    prompt = f"""You are a coaching business analyst for KairosCal.io, which builds booking infrastructure for coaches who sell via discovery calls.
 
 WEBSITE AUDIT DATA:
 {site_data}
 
-Respond with EXACTLY this format (keep each section to 2-4 sentences max):
+STEP 1 — BUSINESS MODEL CLASSIFICATION (required before any analysis):
+Classify this business into ONE of these categories:
+A) SOLO COACH NEEDING CALLS — sells high-ticket offers via discovery/strategy calls, booking infrastructure is critical to revenue
+B) COURSE/MEMBERSHIP SELLER — primarily sells via self-serve checkout (ThriveCart, Kajabi, Teachable, etc.), booking calls are secondary or optional
+C) AGENCY/SERVICE PROVIDER — provides done-for-you services to others (not coaching), booking infra is not the core need
+D) COACH-OF-COACHES — trains other coaches, likely has sophisticated existing infrastructure
+E) TOO EARLY / TOO SMALL — insufficient signals to determine, or clearly under $5K/month
+
+State your classification and ONE sentence explaining why.
+
+If classification is B, C, D, or E: set ICP_FIT to "NO" and skip the outreach hooks. Just provide the audit summary and score.
+
+If classification is A: set ICP_FIT to "YES" and proceed with full analysis.
+
+STEP 2 — Respond with EXACTLY this format (keep each section to 2-4 sentences max):
+
+CLASSIFICATION:
+[Letter) Category — one sentence reason]
+
+ICP_FIT:
+[YES or NO]
 
 AUDIT SUMMARY:
 [Brief assessment of the coaching business's online presence, what they do well, and overall impression]
@@ -2480,10 +2633,15 @@ POSITIONING GAPS:
 [Specific weaknesses in their website, booking flow, offer clarity, or marketing that are costing them clients]
 
 OUTREACH HOOKS:
-[3 specific, personalized cold email hooks based on the gaps found - things that would get this coach's attention because they address real problems on their site. Write these as actual email opening lines. Consider these signals when generating hooks: automation platform anti-signals, confirmation page quality, booking page branding gaps, high-friction forms, CTA destination mismatches, booking redirect chains, and missing schema markup. Prioritize hooks from broken conversion mechanisms over design observations.]
+[Only if ICP_FIT is YES: 3 specific, personalized cold email hooks based on the gaps found. IMPORTANT:
+- Only reference observations you are CONFIDENT about (not booking link status — those are unreliable from automated scraping)
+- Prioritize hooks from: PageSpeed scores (reliable), missing confirmation pages, form friction, ad spend without clear booking path
+- Do NOT generate hooks about "broken booking links" unless you see strong evidence beyond a single HTTP status code
+- Frame as revenue problems, not design problems
+- Consider: automation platform anti-signals, confirmation page quality, booking page branding gaps, high-friction forms, CTA destination mismatches, booking redirect chains, and missing schema markup]
 
 OVERALL SCORE:
-[Rate the site X/10 with a one-line justification]"""
+[X/10 with one-line justification. Factor in ICP fit — a well-built site that doesn't need KairosCal should score lower for outreach purposes even if technically sound]"""
 
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
@@ -2496,6 +2654,8 @@ OVERALL SCORE:
 
         # Parse sections
         sections = {
+            "classification": r"CLASSIFICATION:\s*\n(.*?)(?=\nICP_FIT:|\Z)",
+            "icp_fit": r"ICP_FIT:\s*\n(.*?)(?=\nAUDIT SUMMARY:|\Z)",
             "audit_summary": r"AUDIT SUMMARY:\s*\n(.*?)(?=\nPOSITIONING GAPS:|\Z)",
             "positioning_gaps": r"POSITIONING GAPS:\s*\n(.*?)(?=\nOUTREACH HOOKS:|\Z)",
             "outreach_hooks": r"OUTREACH HOOKS:\s*\n(.*?)(?=\nOVERALL SCORE:|\Z)",
@@ -2572,7 +2732,43 @@ def scrape_website(url):
     text = soup.get_text(separator=" ", strip=True)
     links = get_all_links(soup, url)
     subpages = find_subpages(soup, url)
+
+    # If input URL is a subpage, also fetch the root domain for context
+    parsed_input = urlparse(url)
+    root_url = f"{parsed_input.scheme}://{parsed_input.netloc}/"
+    is_subpage = parsed_input.path.strip("/") != ""
+
+    if is_subpage:
+        intel["input_is_subpage"] = True
+        intel["root_domain_url"] = root_url
+        root_resp, root_soup = fetch_page_simple(root_url)
+        if root_soup:
+            root_html = str(root_soup)
+            root_text = root_soup.get_text(separator=" ", strip=True)
+            root_links = get_all_links(root_soup, root_url)
+            # Merge root domain links into our link pool
+            links.extend(root_links)
+            # Discover subpages from root too
+            root_subpages = find_subpages(root_soup, root_url)
+            for k, v in root_subpages.items():
+                if k not in subpages:
+                    subpages[k] = v
+            # Merge root HTML for pattern detection
+            html = html + "\n" + root_html
+            text = text + " " + root_text
+    else:
+        intel["input_is_subpage"] = False
+
     intel["subpages_found"] = list(subpages.keys())
+
+    # Discover external domains (reveals multi-domain funnels)
+    external_links, external_domains = get_external_links(soup, url)
+    intel["external_domains"] = external_domains
+    intel["external_link_count"] = len(external_links)
+
+    secondary = detect_secondary_funnels(external_links, external_domains)
+    for k, v in secondary.items():
+        intel[f"funnel_{k}"] = v
 
     # Browser-specific data
     if hasattr(resp, "mobile_cta_visible"):
@@ -2763,6 +2959,17 @@ def scrape_website(url):
         intel["timing_site_looks_recent"] = "Yes — actively maintained"
     elif recency_boost >= 1 and intel.get("timing_site_looks_recent", "") != "Yes — actively maintained":
         intel["timing_site_looks_recent"] = "Likely recent"
+
+    # Confidence assessment for key fields
+    intel["_confidence"] = {
+        "booking_cta_works": "LOW" if "verify manually" in str(intel.get("booking_booking_cta_works", "")) else "HIGH",
+        "pagespeed": "HIGH" if intel.get("pagespeed_score_performance") is not None else "NONE",
+        "fb_ads": "HIGH" if intel.get("fbads_fb_ads_found") else "MEDIUM",
+        "social_followers": "MEDIUM",
+        "business_model": "LOW",
+        "booking_tool_detection": "HIGH",
+        "anti_signal_detection": "HIGH",
+    }
 
     # ---- AI analysis (must run last — needs all other data) ----
     if HAS_CLAUDE and ANTHROPIC_API_KEY:
