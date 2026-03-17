@@ -9,633 +9,329 @@
 
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-            background: #0a0a0a;
+            background: #09090b;
             color: #e0e0e0;
             min-height: 100vh;
         }
 
         .container {
-            max-width: 900px;
+            max-width: 1100px;
             margin: 0 auto;
-            padding: 40px 20px;
+            padding: 32px 24px;
         }
 
         header {
             text-align: center;
-            margin-bottom: 48px;
+            margin-bottom: 32px;
         }
 
         header h1 {
-            font-size: 32px;
+            font-size: 28px;
             font-weight: 700;
             color: #fff;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
+            letter-spacing: -0.5px;
         }
 
         header p {
-            color: #888;
-            font-size: 16px;
+            color: #71717a;
+            font-size: 14px;
         }
 
         /* Upload Area */
         .upload-area {
-            border: 2px dashed #333;
+            border: 2px dashed #27272a;
             border-radius: 16px;
-            padding: 60px 40px;
+            padding: 56px 40px;
             text-align: center;
             cursor: pointer;
             transition: all 0.2s;
-            background: #111;
+            background: #111113;
         }
 
         .upload-area:hover, .upload-area.dragover {
-            border-color: #4f8fff;
-            background: #0d1b2a;
+            border-color: #3b82f6;
+            background: #0c1929;
         }
 
-        .upload-area svg {
-            width: 48px;
-            height: 48px;
-            margin-bottom: 16px;
-            color: #555;
-        }
-
-        .upload-area h3 {
-            font-size: 18px;
-            color: #ccc;
-            margin-bottom: 8px;
-        }
-
-        .upload-area p {
-            color: #666;
-            font-size: 14px;
-        }
-
-        .upload-area input[type="file"] {
-            display: none;
-        }
+        .upload-area svg { width: 40px; height: 40px; margin-bottom: 14px; color: #3f3f46; }
+        .upload-area h3 { font-size: 16px; color: #d4d4d8; margin-bottom: 6px; }
+        .upload-area p { color: #52525b; font-size: 13px; }
+        .upload-area input[type="file"] { display: none; }
 
         /* Cards */
         .card {
-            background: #111;
-            border: 1px solid #222;
-            border-radius: 16px;
-            padding: 32px;
-            margin-bottom: 24px;
+            background: #111113;
+            border: 1px solid #1e1e22;
+            border-radius: 14px;
+            padding: 28px;
+            margin-bottom: 20px;
         }
 
-        .card h2 {
-            font-size: 18px;
-            font-weight: 600;
-            margin-bottom: 20px;
-            color: #fff;
-        }
+        .card h2 { font-size: 17px; font-weight: 600; margin-bottom: 18px; color: #fff; }
 
         /* Preview Table */
-        .table-wrap {
-            overflow-x: auto;
-            border-radius: 8px;
-            border: 1px solid #222;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        th {
-            background: #1a1a1a;
-            padding: 10px 14px;
-            text-align: left;
-            font-weight: 600;
-            color: #aaa;
-            white-space: nowrap;
-            border-bottom: 1px solid #222;
-        }
-
-        td {
-            padding: 10px 14px;
-            border-bottom: 1px solid #1a1a1a;
-            max-width: 200px;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-            color: #ccc;
-        }
+        .table-wrap { overflow-x: auto; border-radius: 8px; border: 1px solid #1e1e22; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th { background: #18181b; padding: 8px 12px; text-align: left; font-weight: 600; color: #a1a1aa; white-space: nowrap; border-bottom: 1px solid #1e1e22; }
+        td { padding: 8px 12px; border-bottom: 1px solid #18181b; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d4d4d8; }
 
         /* Info bar */
-        .info-bar {
-            display: flex;
-            gap: 24px;
-            margin-bottom: 20px;
-            flex-wrap: wrap;
-        }
-
-        .info-item {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-size: 14px;
-        }
-
-        .info-item .label { color: #666; }
+        .info-bar { display: flex; gap: 24px; margin-bottom: 18px; flex-wrap: wrap; }
+        .info-item { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+        .info-item .label { color: #52525b; }
         .info-item .value { color: #fff; font-weight: 600; }
-
-        .badge {
-            display: inline-block;
-            padding: 2px 10px;
-            border-radius: 99px;
-            font-size: 12px;
-            font-weight: 600;
-        }
-
-        .badge-ok { background: #0a2e1a; color: #34d399; }
-        .badge-warn { background: #2e2a0a; color: #fbbf24; }
+        .badge { display: inline-block; padding: 2px 10px; border-radius: 99px; font-size: 11px; font-weight: 600; }
+        .badge-ok { background: #052e16; color: #4ade80; }
+        .badge-warn { background: #422006; color: #facc15; }
 
         /* Buttons */
         .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
-            padding: 12px 28px;
-            border-radius: 10px;
-            font-size: 15px;
-            font-weight: 600;
-            border: none;
-            cursor: pointer;
-            transition: all 0.15s;
+            display: inline-flex; align-items: center; gap: 6px;
+            padding: 10px 22px; border-radius: 9px; font-size: 13px;
+            font-weight: 600; border: none; cursor: pointer; transition: all 0.15s;
+            text-decoration: none;
         }
-
-        .btn-primary {
-            background: #4f8fff;
-            color: #fff;
-        }
-
-        .btn-primary:hover { background: #3a7ae8; }
-
-        .btn-primary:disabled {
-            background: #333;
-            color: #666;
-            cursor: not-allowed;
-        }
-
-        .btn-success {
-            background: #059669;
-            color: #fff;
-        }
-
+        .btn-primary { background: #3b82f6; color: #fff; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-primary:disabled { background: #27272a; color: #52525b; cursor: not-allowed; }
+        .btn-success { background: #059669; color: #fff; }
         .btn-success:hover { background: #047857; }
-
-        .btn-outline {
-            background: transparent;
-            color: #888;
-            border: 1px solid #333;
-        }
-
-        .btn-outline:hover { border-color: #555; color: #ccc; }
-
-        .btn-row {
-            display: flex;
-            gap: 12px;
-            margin-top: 24px;
-        }
+        .btn-outline { background: transparent; color: #a1a1aa; border: 1px solid #27272a; }
+        .btn-outline:hover { border-color: #3f3f46; color: #d4d4d8; }
+        .btn-sm { font-size: 12px; padding: 6px 14px; }
+        .btn-row { display: flex; gap: 10px; margin-top: 20px; }
 
         /* Progress */
         .progress-section { margin-top: 8px; }
-
-        .progress-bar-wrap {
-            width: 100%;
-            height: 8px;
-            background: #1a1a1a;
-            border-radius: 99px;
-            overflow: hidden;
-            margin: 16px 0;
-        }
-
-        .progress-bar {
-            height: 100%;
-            background: linear-gradient(90deg, #4f8fff, #7c3aed);
-            border-radius: 99px;
-            transition: width 0.3s;
-            width: 0%;
-        }
-
-        .progress-info {
-            display: flex;
-            justify-content: space-between;
-            font-size: 13px;
-            color: #888;
-        }
-
-        .current-url {
-            font-size: 13px;
-            color: #555;
-            margin-top: 8px;
-            font-family: monospace;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
+        .progress-bar-wrap { width: 100%; height: 6px; background: #18181b; border-radius: 99px; overflow: hidden; margin: 14px 0; }
+        .progress-bar { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); border-radius: 99px; transition: width 0.3s; width: 0%; }
+        .progress-info { display: flex; justify-content: space-between; font-size: 12px; color: #71717a; }
+        .current-url { font-size: 12px; color: #3f3f46; margin-top: 8px; font-family: 'SF Mono', 'Fira Code', monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
         /* Stats */
-        .stats-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 16px;
-            margin-top: 20px;
-        }
-
-        .stat-card {
-            background: #1a1a1a;
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
-        }
-
-        .stat-card .number {
-            font-size: 28px;
-            font-weight: 700;
-            color: #fff;
-        }
-
-        .stat-card .label {
-            font-size: 13px;
-            color: #666;
-            margin-top: 4px;
-        }
-
-        .stat-card.success .number { color: #34d399; }
+        .stats-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+        .stat-card { background: #18181b; border-radius: 10px; padding: 16px; text-align: center; }
+        .stat-card .number { font-size: 24px; font-weight: 700; color: #fff; }
+        .stat-card .label { font-size: 12px; color: #52525b; margin-top: 2px; }
+        .stat-card.success .number { color: #4ade80; }
         .stat-card.failed .number { color: #f87171; }
-        .stat-card.skipped .number { color: #fbbf24; }
+        .stat-card.skipped .number { color: #facc15; }
 
-        /* Sections visibility */
         .hidden { display: none; }
 
-        /* Animations */
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
         .pulsing { animation: pulse 2s ease-in-out infinite; }
 
-        /* Done section */
-        .done-icon {
-            width: 64px;
-            height: 64px;
-            background: #0a2e1a;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 auto 20px;
-        }
-
-        .done-icon svg {
-            width: 32px;
-            height: 32px;
-            color: #34d399;
-        }
-
-        .done-text {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-
-        .done-text h2 {
-            color: #fff;
-            margin-bottom: 8px;
-        }
-
-        .done-text p { color: #888; }
+        /* Done */
+        .done-icon { width: 56px; height: 56px; background: #052e16; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; }
+        .done-icon svg { width: 28px; height: 28px; color: #4ade80; }
+        .done-text { text-align: center; margin-bottom: 20px; }
+        .done-text h2 { color: #fff; margin-bottom: 6px; }
+        .done-text p { color: #71717a; font-size: 14px; }
 
         /* Tabs */
-        .tabs {
-            display: flex;
-            gap: 0;
-            margin-bottom: 24px;
-            background: #111;
-            border-radius: 12px;
-            padding: 4px;
-            border: 1px solid #222;
-        }
-
-        .tab {
-            flex: 1;
-            padding: 12px 20px;
-            text-align: center;
-            font-size: 14px;
-            font-weight: 600;
-            color: #888;
-            cursor: pointer;
-            border-radius: 8px;
-            transition: all 0.15s;
-        }
-
-        .tab.active {
-            background: #4f8fff;
-            color: #fff;
-        }
-
-        .tab:not(.active):hover {
-            color: #ccc;
-        }
+        .tabs { display: flex; gap: 0; margin-bottom: 20px; background: #111113; border-radius: 10px; padding: 3px; border: 1px solid #1e1e22; }
+        .tab { flex: 1; padding: 10px 16px; text-align: center; font-size: 13px; font-weight: 600; color: #71717a; cursor: pointer; border-radius: 7px; transition: all 0.15s; }
+        .tab.active { background: #3b82f6; color: #fff; }
+        .tab:not(.active):hover { color: #d4d4d8; }
 
         /* URL Input */
-        .url-input-area {
-            background: #111;
-            border: 1px solid #222;
-            border-radius: 16px;
-            padding: 40px;
-        }
+        .url-input-area { background: #111113; border: 1px solid #1e1e22; border-radius: 14px; padding: 32px; }
+        .url-input-area label { display: block; font-size: 13px; color: #71717a; margin-bottom: 10px; }
+        .url-input-row { display: flex; gap: 10px; }
+        .url-input-row input { flex: 1; padding: 12px 16px; border-radius: 9px; border: 1px solid #27272a; background: #09090b; color: #fff; font-size: 14px; outline: none; transition: border-color 0.15s; }
+        .url-input-row input:focus { border-color: #3b82f6; }
+        .url-input-row input::placeholder { color: #3f3f46; }
 
-        .url-input-area label {
-            display: block;
-            font-size: 14px;
-            color: #888;
-            margin-bottom: 10px;
-        }
+        /* ============ RESULTS ============ */
 
-        .url-input-row {
-            display: flex;
-            gap: 12px;
-        }
-
-        .url-input-row input {
-            flex: 1;
-            padding: 14px 18px;
-            border-radius: 10px;
-            border: 1px solid #333;
-            background: #0a0a0a;
-            color: #fff;
-            font-size: 15px;
-            outline: none;
-            transition: border-color 0.15s;
-        }
-
-        .url-input-row input:focus {
-            border-color: #4f8fff;
-        }
-
-        .url-input-row input::placeholder {
-            color: #555;
-        }
-
-        /* Single URL results */
-        .results-grid {
-            display: grid;
-            gap: 20px;
-            margin-top: 20px;
-        }
-
-        /* Two-column layout for detail sections */
-        .results-grid.two-col {
-            grid-template-columns: 1fr 1fr;
-            gap: 16px;
-        }
-        @media (max-width: 800px) {
-            .results-grid.two-col { grid-template-columns: 1fr; }
-            .score-hero { grid-template-columns: auto 1fr; gap: 20px; }
-            .score-actions { display: none; }
-        }
-
-        /* Score hero card */
+        /* Score hero */
         .score-hero {
-            background: linear-gradient(135deg, #111 0%, #0d1b2a 100%);
-            border: 1px solid #1a3a5c;
-            border-radius: 16px;
-            padding: 32px;
-            margin-bottom: 24px;
-            display: grid;
-            grid-template-columns: auto 1fr auto;
-            gap: 32px;
+            background: linear-gradient(135deg, #111113 0%, #0f172a 100%);
+            border: 1px solid #1e293b;
+            border-radius: 14px;
+            padding: 28px 32px;
+            margin-bottom: 20px;
+            display: flex;
             align-items: center;
+            gap: 28px;
         }
 
         .score-ring {
-            width: 90px;
-            height: 90px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-            font-weight: 800;
-            color: #fff;
-            position: relative;
+            width: 80px; height: 80px; border-radius: 50%;
+            display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+            font-size: 26px; font-weight: 800; color: #fff;
+        }
+        .score-ring .score-sub { font-size: 13px; font-weight: 400; color: #94a3b8; }
+        .score-ring.score-high { background: radial-gradient(circle, #052e16 30%, #065f46); border: 3px solid #4ade80; }
+        .score-ring.score-mid { background: radial-gradient(circle, #422006 30%, #92400e); border: 3px solid #facc15; }
+        .score-ring.score-low { background: radial-gradient(circle, #450a0a 30%, #991b1b); border: 3px solid #f87171; }
+
+        .score-meta { flex: 1; min-width: 0; }
+        .score-meta h2 { color: #fff; font-size: 18px; margin-bottom: 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .score-meta .classification { color: #94a3b8; font-size: 13px; margin-bottom: 6px; line-height: 1.4; }
+        .score-meta .icp-badge { display: inline-block; padding: 3px 12px; border-radius: 99px; font-size: 11px; font-weight: 700; letter-spacing: 0.5px; }
+        .icp-yes { background: #052e16; color: #4ade80; border: 1px solid #166534; }
+        .icp-no { background: #450a0a; color: #f87171; border: 1px solid #991b1b; }
+        .icp-unknown { background: #18181b; color: #71717a; border: 1px solid #27272a; }
+
+        .score-justification { color: #64748b; font-size: 12px; max-width: 200px; text-align: right; flex-shrink: 0; line-height: 1.4; }
+
+        @media (max-width: 700px) {
+            .score-hero { flex-direction: column; text-align: center; gap: 16px; }
+            .score-justification { max-width: none; text-align: center; }
         }
 
-        .score-ring.score-high { background: radial-gradient(circle, #0a2e1a 40%, #065f46 100%); border: 3px solid #34d399; }
-        .score-ring.score-mid { background: radial-gradient(circle, #2e2a0a 40%, #78350f 100%); border: 3px solid #fbbf24; }
-        .score-ring.score-low { background: radial-gradient(circle, #2e0a0a 40%, #7f1d1d 100%); border: 3px solid #f87171; }
-
-        .score-meta h2 { color: #fff; font-size: 20px; margin-bottom: 6px; }
-        .score-meta .classification { color: #94a3b8; font-size: 14px; margin-bottom: 4px; }
-        .score-meta .icp-badge {
-            display: inline-block;
-            padding: 3px 14px;
-            border-radius: 99px;
-            font-size: 12px;
-            font-weight: 700;
-            letter-spacing: 0.5px;
+        /* Quick stats row under hero */
+        .quick-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
         }
-        .icp-yes { background: #0a2e1a; color: #34d399; border: 1px solid #065f46; }
-        .icp-no { background: #2e0a0a; color: #f87171; border: 1px solid #7f1d1d; }
-        .icp-unknown { background: #1a1a1a; color: #888; border: 1px solid #333; }
-
-        .score-actions {
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
+        .quick-stat {
+            background: #111113;
+            border: 1px solid #1e1e22;
+            border-radius: 10px;
+            padding: 14px 16px;
+            text-align: center;
         }
+        .quick-stat .qs-value { font-size: 18px; font-weight: 700; color: #fff; }
+        .quick-stat .qs-label { font-size: 11px; color: #52525b; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .quick-stat .qs-value.qs-good { color: #4ade80; }
+        .quick-stat .qs-value.qs-warn { color: #facc15; }
+        .quick-stat .qs-value.qs-bad { color: #f87171; }
 
-        /* AI section full-width */
+        /* AI section */
         .ai-section {
-            background: #111;
-            border: 1px solid #222;
-            border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 24px;
-            grid-column: 1 / -1;
+            background: #111113;
+            border: 1px solid #1e1e22;
+            border-radius: 14px;
+            padding: 24px 28px;
+            margin-bottom: 20px;
         }
-
-        .ai-section h3 {
-            font-size: 15px;
-            font-weight: 600;
-            color: #4f8fff;
-            margin-bottom: 16px;
-            padding-bottom: 10px;
-            border-bottom: 1px solid #1a1a1a;
-        }
-
-        .ai-block { margin-bottom: 16px; }
+        .ai-section h3 { font-size: 14px; font-weight: 600; color: #3b82f6; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px solid #1e1e22; }
+        .ai-block { margin-bottom: 18px; }
         .ai-block:last-child { margin-bottom: 0; }
-        .ai-block-label { font-size: 11px; font-weight: 700; color: #4f8fff; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
-        .ai-block-content { color: #d0d0d0; font-size: 14px; line-height: 1.7; white-space: pre-wrap; }
-        .ai-block-content ol { margin: 0; padding-left: 20px; }
-        .ai-block-content li { margin-bottom: 6px; }
+        .ai-block-label { font-size: 10px; font-weight: 700; color: #3b82f6; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 6px; }
+        .ai-block-content { color: #d4d4d8; font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+        .ai-block-content ol { margin: 0; padding-left: 18px; }
+        .ai-block-content li { margin-bottom: 8px; padding-left: 4px; }
 
-        .result-category {
-            background: #111;
-            border: 1px solid #222;
-            border-radius: 12px;
-            overflow: hidden;
+        /* Nav pills for result sections */
+        .section-nav {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+            padding: 4px;
+            background: #111113;
+            border: 1px solid #1e1e22;
+            border-radius: 10px;
         }
+        .section-nav-pill {
+            padding: 7px 14px;
+            font-size: 12px;
+            font-weight: 600;
+            color: #71717a;
+            cursor: pointer;
+            border-radius: 7px;
+            transition: all 0.15s;
+            white-space: nowrap;
+        }
+        .section-nav-pill:hover { color: #d4d4d8; background: #18181b; }
+        .section-nav-pill.active { background: #1e293b; color: #93c5fd; }
+
+        /* Two-column grid */
+        .results-grid { display: grid; gap: 14px; margin-top: 0; }
+        .results-grid.two-col { grid-template-columns: 1fr 1fr; }
+        @media (max-width: 800px) { .results-grid.two-col { grid-template-columns: 1fr; } }
+
+        /* Category cards */
+        .result-category {
+            background: #111113;
+            border: 1px solid #1e1e22;
+            border-radius: 10px;
+            overflow: hidden;
+            transition: border-color 0.15s;
+        }
+        .result-category:hover { border-color: #27272a; }
 
         .result-category-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 16px 24px;
-            cursor: pointer;
-            user-select: none;
-            transition: background 0.15s;
+            display: flex; justify-content: space-between; align-items: center;
+            padding: 14px 20px; cursor: pointer; user-select: none; transition: background 0.15s;
         }
-
-        .result-category-header:hover { background: #161616; }
-
-        .result-category-header h3 {
-            font-size: 15px;
-            font-weight: 600;
-            color: #4f8fff;
-            margin: 0;
-        }
-
-        .result-category-header .toggle-icon {
-            color: #555;
-            font-size: 18px;
-            transition: transform 0.2s;
-        }
-
+        .result-category-header:hover { background: #141416; }
+        .result-category-header h3 { font-size: 13px; font-weight: 600; color: #93c5fd; margin: 0; display: flex; align-items: center; gap: 8px; }
+        .result-category-header .cat-count { font-size: 11px; color: #3f3f46; font-weight: 400; }
+        .result-category-header .toggle-icon { color: #3f3f46; font-size: 14px; transition: transform 0.2s; }
         .result-category.collapsed .toggle-icon { transform: rotate(-90deg); }
         .result-category.collapsed .result-category-body { display: none; }
 
-        .result-category-body {
-            padding: 4px 24px 20px;
-        }
+        .result-category-body { padding: 0 20px 16px; }
 
         .result-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #1a1a1a;
-            font-size: 13px;
+            display: flex; justify-content: space-between; align-items: baseline;
+            padding: 7px 0; border-bottom: 1px solid #141416; font-size: 12px; gap: 16px;
         }
-
         .result-row:last-child { border-bottom: none; }
-
-        .result-key {
-            color: #888;
-            min-width: 200px;
-        }
-
-        .result-value {
-            color: #e0e0e0;
-            text-align: right;
-            word-break: break-word;
-            max-width: 500px;
-        }
-
-        .result-value.good { color: #34d399; }
+        .result-key { color: #71717a; min-width: 0; flex-shrink: 0; }
+        .result-value { color: #e4e4e7; text-align: right; word-break: break-word; min-width: 0; }
+        .result-value.good { color: #4ade80; }
         .result-value.bad { color: #f87171; }
-        .result-value.warn { color: #fbbf24; }
-
-        .result-value a { color: #4f8fff; text-decoration: none; }
+        .result-value.warn { color: #facc15; }
+        .result-value a { color: #60a5fa; text-decoration: none; }
         .result-value a:hover { text-decoration: underline; }
 
-        /* Confidence badges */
-        .conf-high { color: #34d399; }
-        .conf-medium { color: #fbbf24; }
-        .conf-low { color: #f87171; }
-        .conf-none { color: #555; }
+        /* Confidence */
+        .conf-badge { display: inline-block; padding: 1px 8px; border-radius: 4px; font-size: 10px; font-weight: 600; margin: 0 3px; }
+        .conf-high { background: #052e16; color: #4ade80; }
+        .conf-medium { background: #422006; color: #facc15; }
+        .conf-low { background: #450a0a; color: #f87171; }
+        .conf-none { background: #18181b; color: #52525b; }
 
-        /* PageSpeed color coding */
-        .ps-good { color: #34d399; font-weight: 700; }
-        .ps-mid { color: #fbbf24; font-weight: 700; }
+        /* PageSpeed color */
+        .ps-good { color: #4ade80; font-weight: 700; }
+        .ps-mid { color: #facc15; font-weight: 700; }
         .ps-bad { color: #f87171; font-weight: 700; }
 
         /* Advanced toggle */
-        .advanced-toggle {
-            text-align: center;
-            padding: 16px 0 0;
-            grid-column: 1 / -1;
-        }
+        .advanced-toggle { text-align: center; padding: 10px 0; grid-column: 1 / -1; }
+        .advanced-toggle button { background: #18181b; border: 1px solid #27272a; color: #71717a; padding: 8px 20px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; transition: all 0.15s; }
+        .advanced-toggle button:hover { border-color: #3f3f46; color: #d4d4d8; background: #1e1e22; }
 
-        .advanced-toggle button {
-            background: transparent;
-            border: 1px solid #333;
-            color: #888;
-            padding: 8px 24px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 13px;
-            font-weight: 600;
-            transition: all 0.15s;
-        }
-
-        .advanced-toggle button:hover { border-color: #555; color: #ccc; }
-
-        /* Copy/export buttons */
-        .btn-sm {
-            font-size: 12px;
-            padding: 6px 14px;
-            border-radius: 8px;
-        }
-
-        /* Health check panel */
-        .health-bar {
-            display: flex;
-            gap: 10px;
-            flex-wrap: wrap;
-            margin-bottom: 24px;
-            padding: 16px 20px;
-            background: #111;
-            border: 1px solid #222;
-            border-radius: 12px;
-            align-items: center;
-        }
-
-        .health-bar .health-title {
-            font-size: 13px;
-            font-weight: 600;
-            color: #666;
-            margin-right: 8px;
-        }
-
-        .health-chip {
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            padding: 5px 12px;
-            border-radius: 8px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: default;
-        }
-
-        .health-chip.ok { background: #0a2e1a; color: #34d399; }
-        .health-chip.fail { background: #2e0a0a; color: #f87171; }
-        .health-chip .dot {
-            width: 7px;
-            height: 7px;
-            border-radius: 50%;
-        }
-        .health-chip.ok .dot { background: #34d399; }
+        /* Health bar */
+        .health-bar { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; padding: 12px 16px; background: #111113; border: 1px solid #1e1e22; border-radius: 10px; align-items: center; }
+        .health-bar .health-title { font-size: 11px; font-weight: 600; color: #52525b; margin-right: 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+        .health-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; cursor: default; }
+        .health-chip.ok { background: #052e16; color: #4ade80; }
+        .health-chip.fail { background: #450a0a; color: #f87171; }
+        .health-chip .dot { width: 6px; height: 6px; border-radius: 50%; }
+        .health-chip.ok .dot { background: #4ade80; }
         .health-chip.fail .dot { background: #f87171; }
+
+        /* Smooth content transition */
+        .result-category-body { animation: fadeIn 0.15s ease; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #3f3f46; }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
             <h1>Lead Enrichment Scraper</h1>
-            <p>Upload your Apollo CSV and enrich leads with website intelligence</p>
+            <p>Deep website intelligence for coaching businesses</p>
         </header>
 
-        <!-- Health Check Bar -->
         <div class="health-bar" id="health-bar">
             <span class="health-title">Services:</span>
-            <span class="health-chip" style="background:#1a1a1a; color:#555;">Checking...</span>
+            <span class="health-chip" style="background:#18181b; color:#3f3f46;">Checking...</span>
         </div>
 
         <!-- Step 1: Upload -->
@@ -651,7 +347,7 @@
                         <path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
                     </svg>
                     <h3>Drop your CSV file here</h3>
-                    <p>or click to browse — must contain a website/URL column</p>
+                    <p>or click to browse - must contain a website/URL column</p>
                     <input type="file" id="fileInput" accept=".csv">
                 </div>
             </div>
@@ -667,24 +363,27 @@
             </div>
         </div>
 
-        <!-- Step: Single URL Results -->
+        <!-- Single URL Results -->
         <div id="step-url-results" class="hidden">
             <div class="card">
                 <div id="url-loading" class="hidden" style="text-align:center; padding: 40px 0;">
                     <h2 class="pulsing">Scraping website...</h2>
+                    <p style="color:#52525b; margin-top:8px; font-size:13px;">This takes 30-90 seconds depending on the site</p>
                     <div class="current-url" id="url-scraping" style="margin-top:12px;"></div>
                 </div>
                 <div id="url-results-content" class="hidden">
-                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:10px;">
                         <h2 style="margin-bottom:0;">Scrape Results</h2>
-                        <div style="display:flex; gap:10px;">
-                            <button class="btn btn-outline btn-sm" id="copy-json-btn" title="Copy raw JSON">Copy JSON</button>
-                            <a class="btn btn-success" id="url-download-btn" style="font-size:13px; padding:8px 18px;">Download CSV</a>
-                            <button class="btn btn-outline" id="url-back-btn" style="font-size:13px; padding:8px 18px;">Scrape Another</button>
+                        <div style="display:flex; gap:8px;">
+                            <button class="btn btn-outline btn-sm" id="copy-json-btn" title="Copy raw JSON to clipboard">Copy JSON</button>
+                            <a class="btn btn-success btn-sm" id="url-download-btn">Download CSV</a>
+                            <button class="btn btn-outline btn-sm" id="url-back-btn">Scrape Another</button>
                         </div>
                     </div>
                     <div id="score-hero-container"></div>
+                    <div id="quick-stats-container"></div>
                     <div id="ai-section-container"></div>
+                    <div id="section-nav-container"></div>
                     <div class="results-grid two-col" id="url-results-grid"></div>
                 </div>
             </div>
@@ -695,21 +394,12 @@
             <div class="card">
                 <h2>CSV Preview</h2>
                 <div class="info-bar">
-                    <div class="info-item">
-                        <span class="label">Rows:</span>
-                        <span class="value" id="row-count">0</span>
-                    </div>
-                    <div class="info-item">
-                        <span class="label">Website column:</span>
-                        <span class="value" id="website-col">—</span>
-                    </div>
+                    <div class="info-item"><span class="label">Rows:</span><span class="value" id="row-count">0</span></div>
+                    <div class="info-item"><span class="label">Website column:</span><span class="value" id="website-col">-</span></div>
                     <div class="info-item" id="col-status"></div>
                 </div>
                 <div class="table-wrap">
-                    <table id="preview-table">
-                        <thead><tr id="preview-header"></tr></thead>
-                        <tbody id="preview-body"></tbody>
-                    </table>
+                    <table id="preview-table"><thead><tr id="preview-header"></tr></thead><tbody id="preview-body"></tbody></table>
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" id="start-btn">Start Enrichment</button>
@@ -723,28 +413,14 @@
             <div class="card">
                 <h2 class="pulsing">Scraping in progress...</h2>
                 <div class="progress-section">
-                    <div class="progress-bar-wrap">
-                        <div class="progress-bar" id="progress-bar"></div>
-                    </div>
-                    <div class="progress-info">
-                        <span id="progress-count">0 / 0</span>
-                        <span id="progress-pct">0%</span>
-                    </div>
+                    <div class="progress-bar-wrap"><div class="progress-bar" id="progress-bar"></div></div>
+                    <div class="progress-info"><span id="progress-count">0 / 0</span><span id="progress-pct">0%</span></div>
                     <div class="current-url" id="current-url"></div>
                 </div>
                 <div class="stats-grid">
-                    <div class="stat-card success">
-                        <div class="number" id="stat-success">0</div>
-                        <div class="label">Scraped</div>
-                    </div>
-                    <div class="stat-card failed">
-                        <div class="number" id="stat-failed">0</div>
-                        <div class="label">Failed</div>
-                    </div>
-                    <div class="stat-card skipped">
-                        <div class="number" id="stat-skipped">0</div>
-                        <div class="label">No URL</div>
-                    </div>
+                    <div class="stat-card success"><div class="number" id="stat-success">0</div><div class="label">Scraped</div></div>
+                    <div class="stat-card failed"><div class="number" id="stat-failed">0</div><div class="label">Failed</div></div>
+                    <div class="stat-card skipped"><div class="number" id="stat-skipped">0</div><div class="label">No URL</div></div>
                 </div>
             </div>
         </div>
@@ -752,28 +428,12 @@
         <!-- Step 4: Done -->
         <div id="step-done" class="hidden">
             <div class="card">
-                <div class="done-icon">
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
-                        <path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                    </svg>
-                </div>
-                <div class="done-text">
-                    <h2>Enrichment Complete</h2>
-                    <p id="done-summary"></p>
-                </div>
+                <div class="done-icon"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg></div>
+                <div class="done-text"><h2>Enrichment Complete</h2><p id="done-summary"></p></div>
                 <div class="stats-grid">
-                    <div class="stat-card success">
-                        <div class="number" id="done-success">0</div>
-                        <div class="label">Scraped</div>
-                    </div>
-                    <div class="stat-card failed">
-                        <div class="number" id="done-failed">0</div>
-                        <div class="label">Failed</div>
-                    </div>
-                    <div class="stat-card skipped">
-                        <div class="number" id="done-skipped">0</div>
-                        <div class="label">No URL</div>
-                    </div>
+                    <div class="stat-card success"><div class="number" id="done-success">0</div><div class="label">Scraped</div></div>
+                    <div class="stat-card failed"><div class="number" id="done-failed">0</div><div class="label">Failed</div></div>
+                    <div class="stat-card skipped"><div class="number" id="done-skipped">0</div><div class="label">No URL</div></div>
                 </div>
                 <div class="btn-row" style="justify-content: center;">
                     <a class="btn btn-success" id="download-btn">Download Enriched CSV</a>
@@ -786,17 +446,14 @@
     <script>
         let currentJobId = null;
         let pollInterval = null;
-
         const $ = (sel) => document.querySelector(sel);
 
-        // Steps
         function showStep(step) {
             ['upload', 'preview', 'progress', 'done', 'url-results'].forEach(s => {
                 $(`#step-${s}`).classList.toggle('hidden', s !== step);
             });
         }
 
-        // Tabs
         function switchTab(mode) {
             $('#tab-csv').classList.toggle('active', mode === 'csv');
             $('#tab-url').classList.toggle('active', mode === 'url');
@@ -804,84 +461,39 @@
             $('#mode-url').classList.toggle('hidden', mode !== 'url');
         }
 
-        // Drag & drop
         const dropzone = $('#dropzone');
         const fileInput = $('#fileInput');
-
         dropzone.addEventListener('click', () => fileInput.click());
         dropzone.addEventListener('dragover', (e) => { e.preventDefault(); dropzone.classList.add('dragover'); });
         dropzone.addEventListener('dragleave', () => dropzone.classList.remove('dragover'));
-        dropzone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropzone.classList.remove('dragover');
-            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
-        });
+        dropzone.addEventListener('drop', (e) => { e.preventDefault(); dropzone.classList.remove('dragover'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
         fileInput.addEventListener('change', () => { if (fileInput.files.length) handleFile(fileInput.files[0]); });
 
         async function handleFile(file) {
-            if (!file.name.endsWith('.csv')) {
-                alert('Please upload a CSV file');
-                return;
-            }
-
+            if (!file.name.endsWith('.csv')) { alert('Please upload a CSV file'); return; }
             const formData = new FormData();
             formData.append('file', file);
-
             const res = await fetch('/upload', { method: 'POST', body: formData });
             const data = await res.json();
-
-            if (data.error) {
-                alert(data.error);
-                return;
-            }
-
+            if (data.error) { alert(data.error); return; }
             currentJobId = data.job_id;
             $('#row-count').textContent = data.rows;
             $('#website-col').textContent = data.website_column || 'Not found';
-            $('#col-status').innerHTML = data.website_column
-                ? '<span class="badge badge-ok">Detected</span>'
-                : '<span class="badge badge-warn">Not found</span>';
-
-            // Build preview table
-            const header = $('#preview-header');
-            const body = $('#preview-body');
-            header.innerHTML = '';
-            body.innerHTML = '';
-
-            data.columns.forEach(col => {
-                const th = document.createElement('th');
-                th.textContent = col;
-                header.appendChild(th);
-            });
-
-            data.preview.forEach(row => {
-                const tr = document.createElement('tr');
-                data.columns.forEach(col => {
-                    const td = document.createElement('td');
-                    td.textContent = row[col] ?? '';
-                    td.title = row[col] ?? '';
-                    tr.appendChild(td);
-                });
-                body.appendChild(tr);
-            });
-
+            $('#col-status').innerHTML = data.website_column ? '<span class="badge badge-ok">Detected</span>' : '<span class="badge badge-warn">Not found</span>';
+            const header = $('#preview-header'); const body = $('#preview-body');
+            header.innerHTML = ''; body.innerHTML = '';
+            data.columns.forEach(col => { const th = document.createElement('th'); th.textContent = col; header.appendChild(th); });
+            data.preview.forEach(row => { const tr = document.createElement('tr'); data.columns.forEach(col => { const td = document.createElement('td'); td.textContent = row[col] ?? ''; td.title = row[col] ?? ''; tr.appendChild(td); }); body.appendChild(tr); });
             $('#start-btn').disabled = !data.website_column;
             showStep('preview');
         }
 
-        // Start scraping
-        $('#start-btn').addEventListener('click', async () => {
-            await fetch(`/start/${currentJobId}`, { method: 'POST' });
-            showStep('progress');
-            pollInterval = setInterval(pollStatus, 1000);
-        });
+        $('#start-btn').addEventListener('click', async () => { await fetch(`/start/${currentJobId}`, { method: 'POST' }); showStep('progress'); pollInterval = setInterval(pollStatus, 1000); });
 
         async function pollStatus() {
             const res = await fetch(`/status/${currentJobId}`);
             const data = await res.json();
-
             if (data.error) return;
-
             const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
             $('#progress-bar').style.width = pct + '%';
             $('#progress-count').textContent = `${data.current} / ${data.total}`;
@@ -890,74 +502,36 @@
             $('#stat-success').textContent = data.stats.success || 0;
             $('#stat-failed').textContent = data.stats.failed || 0;
             $('#stat-skipped').textContent = data.stats.no_url || 0;
-
-            if (data.status === 'done') {
-                clearInterval(pollInterval);
-                $('#done-success').textContent = data.stats.success || 0;
-                $('#done-failed').textContent = data.stats.failed || 0;
-                $('#done-skipped').textContent = data.stats.no_url || 0;
-                const total = data.total || 0;
-                const success = data.stats.success || 0;
-                $('#done-summary').textContent = `${success} of ${total} leads enriched with website intel.`;
-                $('#download-btn').href = `/download/${currentJobId}`;
-                showStep('done');
-            }
-
-            if (data.status === 'error') {
-                clearInterval(pollInterval);
-                alert('Error: ' + data.error);
-                showStep('upload');
-            }
+            if (data.status === 'done') { clearInterval(pollInterval); $('#done-success').textContent = data.stats.success || 0; $('#done-failed').textContent = data.stats.failed || 0; $('#done-skipped').textContent = data.stats.no_url || 0; $('#done-summary').textContent = `${data.stats.success || 0} of ${data.total || 0} leads enriched.`; $('#download-btn').href = `/download/${currentJobId}`; showStep('done'); }
+            if (data.status === 'error') { clearInterval(pollInterval); alert('Error: ' + data.error); showStep('upload'); }
         }
 
-        // Reset buttons
         $('#reset-btn').addEventListener('click', () => { showStep('upload'); fileInput.value = ''; });
         $('#new-btn').addEventListener('click', () => { showStep('upload'); fileInput.value = ''; });
 
-        // ===== Single URL Scraping =====
+        // ===== Single URL =====
         $('#scrape-url-btn').addEventListener('click', startUrlScrape);
         $('#urlInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') startUrlScrape(); });
 
         async function startUrlScrape() {
             const url = $('#urlInput').value.trim();
             if (!url) { alert('Please enter a URL'); return; }
-
             showStep('url-results');
             $('#url-loading').classList.remove('hidden');
             $('#url-results-content').classList.add('hidden');
             $('#url-scraping').textContent = url;
-
-            const res = await fetch('/scrape-url', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url }),
-            });
+            const res = await fetch('/scrape-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
             const data = await res.json();
-
             if (data.error) { alert(data.error); showStep('upload'); return; }
-
-            // Poll for results
             const jobId = data.job_id;
             const poll = setInterval(async () => {
                 const sr = await fetch(`/status/${jobId}`);
                 const sd = await sr.json();
-
-                if (sd.status === 'done') {
-                    clearInterval(poll);
-                    $('#url-loading').classList.add('hidden');
-                    $('#url-results-content').classList.remove('hidden');
-                    $('#url-download-btn').href = `/download/${jobId}`;
-                    renderUrlResults(sd.results);
-                }
-                if (sd.status === 'error') {
-                    clearInterval(poll);
-                    alert('Error: ' + sd.error);
-                    showStep('upload');
-                }
+                if (sd.status === 'done') { clearInterval(poll); $('#url-loading').classList.add('hidden'); $('#url-results-content').classList.remove('hidden'); $('#url-download-btn').href = `/download/${jobId}`; renderUrlResults(sd.results); }
+                if (sd.status === 'error') { clearInterval(poll); alert('Error: ' + sd.error); showStep('upload'); }
             }, 1000);
         }
 
-        // Store raw results for copy/export
         let _lastResults = null;
 
         function renderUrlResults(results) {
@@ -965,481 +539,257 @@
             const grid = $('#url-results-grid');
             grid.innerHTML = '';
 
-            // ===== 1. SCORE HERO CARD =====
-            const heroContainer = $('#score-hero-container');
-            heroContainer.innerHTML = '';
-
+            // === SCORE HERO ===
+            const heroC = $('#score-hero-container');
+            heroC.innerHTML = '';
             const scoreText = results.ai_overall_score || '';
             const scoreMatch = scoreText.match(/(\d+)\s*\/\s*10/);
             const scoreNum = scoreMatch ? parseInt(scoreMatch[1]) : null;
             const scoreClass = scoreNum >= 7 ? 'score-high' : scoreNum >= 4 ? 'score-mid' : 'score-low';
-
             const classification = results.ai_classification || '';
             const icpFit = (results.ai_icp_fit || '').trim().toUpperCase();
             const icpClass = icpFit === 'YES' ? 'icp-yes' : icpFit === 'NO' ? 'icp-no' : 'icp-unknown';
             const siteUrl = results.website_url || results.final_url || '';
+            const justification = scoreText.replace(/\d+\s*\/\s*10\s*[-—]?\s*/, '').trim();
 
-            const hero = document.createElement('div');
-            hero.className = 'score-hero';
-            hero.innerHTML = `
-                <div class="score-ring ${scoreNum !== null ? scoreClass : 'score-mid'}">
-                    ${scoreNum !== null ? scoreNum + '<span style="font-size:14px;font-weight:400;color:#94a3b8;">/10</span>' : '—'}
-                </div>
+            heroC.innerHTML = `<div class="score-hero">
+                <div class="score-ring ${scoreNum !== null ? scoreClass : 'score-mid'}">${scoreNum !== null ? scoreNum + '<span class="score-sub">/10</span>' : '-'}</div>
                 <div class="score-meta">
                     <h2>${siteUrl}</h2>
-                    <div class="classification">${classification || 'Classification pending...'}</div>
+                    <div class="classification">${classification || ''}</div>
                     <span class="icp-badge ${icpClass}">ICP FIT: ${icpFit || 'N/A'}</span>
                 </div>
-                <div class="score-actions">
-                    <span style="color:#666; font-size:12px; text-align:center;">${scoreText.replace(/\d+\s*\/\s*10/, '').trim()}</span>
-                </div>
-            `;
-            heroContainer.appendChild(hero);
+                ${justification ? `<div class="score-justification">${justification}</div>` : ''}
+            </div>`;
 
-            // ===== 2. AI ANALYSIS SECTION (top, full-width) =====
-            const aiContainer = $('#ai-section-container');
-            aiContainer.innerHTML = '';
+            // === QUICK STATS ===
+            const qsC = $('#quick-stats-container');
+            qsC.innerHTML = '';
+            const psScore = results.pagespeed_score_performance;
+            const bookingTool = results.booking_booking_tool || 'None';
+            const ctaWorks = results.booking_booking_cta_works || 'Unknown';
+            const fbAds = results.fbads_fb_ads_count || 0;
+            const totalFollowers = results.social_social_total_followers || 0;
+            const pagesScraped = results.crawl_pages_scraped || 0;
 
+            const psClass = psScore >= 90 ? 'qs-good' : psScore >= 50 ? 'qs-warn' : psScore != null ? 'qs-bad' : '';
+            const ctaClass = ctaWorks === 'Yes' ? 'qs-good' : ctaWorks.includes('Likely') ? 'qs-warn' : ctaWorks.includes('broken') || ctaWorks.includes('Broken') ? 'qs-bad' : '';
+
+            qsC.innerHTML = `<div class="quick-stats">
+                <div class="quick-stat"><div class="qs-value ${psClass}">${psScore != null ? psScore : '-'}</div><div class="qs-label">PageSpeed</div></div>
+                <div class="quick-stat"><div class="qs-value">${bookingTool}</div><div class="qs-label">Booking Tool</div></div>
+                <div class="quick-stat"><div class="qs-value ${ctaClass}">${ctaWorks.length > 20 ? ctaWorks.substring(0,18) + '...' : ctaWorks}</div><div class="qs-label">CTA Status</div></div>
+                <div class="quick-stat"><div class="qs-value">${fbAds}</div><div class="qs-label">FB Ads</div></div>
+                <div class="quick-stat"><div class="qs-value">${typeof totalFollowers === 'number' ? totalFollowers.toLocaleString() : totalFollowers}</div><div class="qs-label">Followers</div></div>
+                <div class="quick-stat"><div class="qs-value">${pagesScraped}</div><div class="qs-label">Pages Crawled</div></div>
+            </div>`;
+
+            // === AI SECTION ===
+            const aiC = $('#ai-section-container');
+            aiC.innerHTML = '';
             const aiFields = [
                 { key: 'ai_audit_summary', label: 'Audit Summary' },
                 { key: 'ai_positioning_gaps', label: 'Positioning Gaps' },
                 { key: 'ai_outreach_hooks', label: 'Outreach Hooks' },
             ];
-
-            let hasAi = aiFields.some(f => results[f.key]);
-            if (hasAi) {
-                const aiSection = document.createElement('div');
-                aiSection.className = 'ai-section';
-                aiSection.innerHTML = '<h3>AI Analysis</h3>';
+            if (aiFields.some(f => results[f.key])) {
+                let aiHtml = '<div class="ai-section"><h3>AI Analysis</h3>';
                 for (const field of aiFields) {
                     const val = results[field.key];
                     if (!val) continue;
-                    const block = document.createElement('div');
-                    block.className = 'ai-block';
-                    // Format outreach hooks as numbered list
                     let content = val;
                     if (field.key === 'ai_outreach_hooks') {
                         const lines = val.split(/\n/).filter(l => l.trim());
                         const items = lines.map(l => l.replace(/^\d+[\.\)]\s*/, '').trim()).filter(Boolean);
-                        if (items.length > 1) {
-                            content = '<ol>' + items.map(i => `<li>${i}</li>`).join('') + '</ol>';
-                        }
+                        if (items.length > 1) content = '<ol>' + items.map(i => `<li>${i}</li>`).join('') + '</ol>';
                     }
-                    block.innerHTML = `
-                        <div class="ai-block-label">${field.label}</div>
-                        <div class="ai-block-content">${content}</div>
-                    `;
-                    aiSection.appendChild(block);
+                    aiHtml += `<div class="ai-block"><div class="ai-block-label">${field.label}</div><div class="ai-block-content">${content}</div></div>`;
                 }
-                aiContainer.appendChild(aiSection);
+                aiHtml += '</div>';
+                aiC.innerHTML = aiHtml;
             }
 
-            // ===== 3. DETAIL CATEGORIES (collapsible, two-column) =====
-            const mainCategories = {
-                'Booking Infrastructure': {
-                    open: true,
-                    format: {
-                        'booking_booking_tool': 'Booking Tool',
-                        'booking_booking_tool_branded': 'Branded or Generic',
-                        'booking_booking_cta_above_fold': 'CTA Above Fold',
-                        'booking_pre_call_sequence_visible': 'Pre-Call Sequence',
-                        'booking_clicks_to_book': 'Clicks to Book',
-                        'booking_booking_cta_works': 'CTA Works',
-                        'booking_has_contact_form': 'Contact Form',
-                        'booking_booking_links': 'Booking Links',
-                    }
-                },
-                'Offer Details': {
-                    open: true,
-                    format: {
-                        'offer_offer_type': 'Offer Type',
-                        'offer_price_range': 'Price Range',
-                        'offer_price_points': 'Price Points',
-                        'offer_pricing_page_exists': 'Pricing Page Exists',
-                        'offer_pricing_page_url': 'Pricing Page URL',
-                        'offer_application_required': 'Application Required',
-                        'offer_sales_model': 'Sales Model',
-                        'offer_target_client': 'Target Client',
-                        'offer_solo_or_multi_coach': 'Solo/Multi Coach',
-                        'offer_offer_description': 'Description',
-                    }
-                },
-                'Technical Gaps': {
-                    open: true,
-                    format: {
-                        'gaps_has_ssl': 'Has SSL',
-                        'gaps_ssl_issues': 'SSL Issues',
-                        'gaps_missing_favicon': 'Missing Favicon',
-                        'gaps_outdated_footer_year': 'Outdated Footer Year',
-                        'gaps_placeholder_text_found': 'Placeholder Text',
-                        'gaps_placeholder_details': 'Placeholder Details',
-                        'gaps_conflicting_ctas': 'Conflicting CTAs',
-                        'gaps_cta_count': 'CTA Count',
-                        'gaps_cta_unique_actions': 'Unique CTA Destinations',
-                        'gaps_cta_list': 'CTAs Found',
-                        'gaps_booking_page_no_context': 'Booking Page No Context',
-                        'gaps_broken_links': 'Broken Links',
-                        'gaps_technical_issues_summary': 'Issues Summary',
-                    }
-                },
-                'Audience Signals': {
-                    open: true,
-                    format: {
-                        'audience_serves_multiple_audiences': 'Multiple Audiences',
-                        'audience_audience_segments': 'Segments',
-                        'audience_has_active_blog': 'Active Blog',
-                        'audience_latest_blog_date': 'Latest Blog Date',
-                        'audience_has_podcast': 'Has Podcast',
-                        'audience_has_youtube': 'Has YouTube',
-                        'audience_social_proof_testimonials': 'Testimonials',
-                        'audience_testimonial_count': 'Testimonial Count',
-                        'audience_social_proof_logos': 'Logo Bar',
-                        'audience_social_proof_media_mentions': 'Media Mentions',
-                        'audience_social_proof_details': 'Social Proof Details',
-                    }
-                },
-                'Paid Ads Detection': {
-                    format: {
-                        'ads_has_facebook_pixel': 'Facebook/Meta Pixel',
-                        'ads_has_google_ads_tag': 'Google Ads Tag',
-                        'ads_has_linkedin_pixel': 'LinkedIn Pixel',
-                        'ads_has_retargeting_pixels': 'Retargeting Pixels',
-                        'ads_utm_parameters_found': 'UTM Parameters Found',
-                        'ads_likely_running_paid': 'Likely Running Paid Ads',
-                        'ads_ad_details': 'Ad Details',
-                    }
-                },
-                'Facebook Ad Library': {
-                    format: {
-                        'fbads_fb_ads_found': 'Active Ads Found',
-                        'fbads_fb_ads_count': 'Number of Ads',
-                        'fbads_fb_ads_status': 'Status',
-                        'fbads_fb_ads_details': 'Ad Previews',
-                        'fbads_fb_ads_library_url': 'Ad Library Link',
-                    }
-                },
-                'PageSpeed Insights': {
-                    format: {
-                        'pagespeed_score_performance': 'Performance Score',
-                        'pagespeed_score_accessibility': 'Accessibility Score',
-                        'pagespeed_score_seo': 'SEO Score',
-                        'pagespeed_score_best_practices': 'Best Practices Score',
-                        'pagespeed_lcp_seconds': 'Largest Contentful Paint (s)',
-                        'pagespeed_fcp_seconds': 'First Contentful Paint (s)',
-                        'pagespeed_cls': 'Cumulative Layout Shift',
-                        'pagespeed_tbt_ms': 'Total Blocking Time (ms)',
-                        'pagespeed_speed_index': 'Speed Index (s)',
-                        'pagespeed_fid_ms': 'Max Potential FID (ms)',
-                        'pagespeed_opportunities': 'Top Opportunities',
-                    }
-                },
-                'Site Performance': {
-                    format: {
-                        'mobile_load_time_seconds': 'Mobile Load Time (seconds)',
-                        'mobile_cta_visible_above_fold': 'Mobile CTA Above Fold',
-                        'perf_load_time_seconds': 'Server Response Time (seconds)',
-                        'perf_page_size_kb': 'Page Size (KB)',
-                        'perf_mobile_viewport_set': 'Mobile Viewport Set',
-                        'perf_image_count': 'Image Count',
-                        'perf_mobile_layout_issues': 'Mobile Issues',
-                        'rendered_with': 'Rendered With',
-                    }
-                },
-                'Social Media Profiles': {
-                    format: {
-                        'social_instagram_url': 'Instagram URL',
-                        'social_instagram_followers': 'Instagram Followers',
-                        'social_instagram_bio': 'Instagram Bio',
-                        'social_linkedin_url': 'LinkedIn URL',
-                        'social_linkedin_followers': 'LinkedIn Followers',
-                        'social_youtube_url': 'YouTube URL',
-                        'social_youtube_subscribers': 'YouTube Subscribers',
-                        'social_twitter_url': 'Twitter/X URL',
-                        'social_twitter_followers': 'Twitter/X Followers',
-                        'social_facebook_url': 'Facebook URL',
-                        'social_facebook_followers': 'Facebook Followers',
-                        'social_tiktok_url': 'TikTok URL',
-                        'social_tiktok_followers': 'TikTok Followers',
-                        'social_social_total_followers': 'Total Followers',
-                        'social_social_most_active_platform': 'Most Active Platform',
-                        'social_social_summary': 'Summary',
-                    }
-                },
-                'External Domains / Funnels': {
-                    format: {
-                        'external_domains': 'External Domains Found',
-                        'external_link_count': 'External Link Count',
-                        'funnel_has_secondary_domain': 'Has Secondary Domain',
-                        'funnel_secondary_domains': 'Secondary Domains',
-                        'funnel_secondary_funnel_platform': 'Secondary Funnel Platform',
-                    }
-                },
-                'Solo vs Multi-Coach': {
-                    format: {
-                        'team_solo_or_multi_coach': 'Determination',
-                        'team_team_page_exists': 'Team Page Exists',
-                        'team_team_coach_count': 'Coach Count',
-                        'team_team_coach_names': 'Coach Names',
-                        'team_copy_uses_i_my': 'Copy Uses I/My',
-                        'team_copy_uses_we_our': 'Copy Uses We/Our',
-                    }
-                },
-                'Recency — Overall': {
-                    format: {
-                        'timing_site_looks_recent': 'Site Freshness',
-                        'timing_copyright_year': 'Copyright Year',
-                        'timing_design_assessment': 'Tech Stack / Design',
-                        'timing_domain_age_years': 'Domain Age (years)',
-                        'timing_domain_created': 'Domain Created',
-                    }
-                },
-                'Recency — Content': {
-                    format: {
-                        'timing_newest_content_date': 'Newest Content Date',
-                        'timing_content_dates_found': 'Dates Found on Site',
-                        'timing_sitemap_last_updated': 'Sitemap Last Updated',
-                        'timing_sitemap_page_count': 'Sitemap Pages',
-                        'timing_http_last_modified': 'HTTP Last-Modified',
-                        'timing_rss_latest_date': 'Latest RSS/Feed Post',
-                        'timing_rss_feed_url': 'RSS Feed URL',
-                        'timing_rss_post_count': 'Feed Post Count',
-                    }
-                },
-                'Recency — Activity': {
-                    format: {
-                        'timing_now_enrolling_banner': 'Enrolling / Launch Banner',
-                        'timing_new_program_signals': 'New Program Signals',
-                        'timing_upcoming_events': 'Upcoming Events',
-                        'timing_hiring_indicators': 'Hiring Indicators',
-                        'timing_press_mentions': 'Press Mentions',
-                    }
-                },
-                'Full Site Crawl': {
-                    format: {
-                        'crawl_pages_found': 'Total Pages Found',
-                        'crawl_pages_scraped': 'Pages Scraped',
-                        'crawl_all_emails': 'All Emails Found',
-                        'crawl_all_phones': 'All Phones Found',
-                        'crawl_all_prices': 'All Prices Found',
-                        'crawl_price_range': 'Price Range (from crawl)',
-                        'crawl_total_testimonials': 'Total Testimonials',
-                        'crawl_hidden_pages': 'Hidden/Interesting Pages',
-                        'crawl_full_text_length': 'Total Text Length (chars)',
-                    }
-                },
-            };
+            // === CATEGORY DEFINITIONS ===
+            const allCategories = [
+                { name: 'Booking Infrastructure', group: 'main', open: true, fields: {
+                    'booking_booking_tool': 'Booking Tool', 'booking_booking_tool_branded': 'Branded/Generic', 'booking_booking_cta_above_fold': 'CTA Above Fold',
+                    'booking_pre_call_sequence_visible': 'Pre-Call Sequence', 'booking_clicks_to_book': 'Clicks to Book', 'booking_booking_cta_works': 'CTA Works',
+                    'booking_has_contact_form': 'Contact Form', 'booking_booking_links': 'Booking Links' }},
+                { name: 'Offer Details', group: 'main', open: true, fields: {
+                    'offer_offer_type': 'Offer Type', 'offer_price_range': 'Price Range', 'offer_price_points': 'Price Points', 'offer_pricing_page_exists': 'Pricing Page',
+                    'offer_pricing_page_url': 'Pricing URL', 'offer_application_required': 'Application Required', 'offer_sales_model': 'Sales Model',
+                    'offer_target_client': 'Target Client', 'offer_solo_or_multi_coach': 'Solo/Multi Coach', 'offer_offer_description': 'Description' }},
+                { name: 'Technical Gaps', group: 'main', open: true, fields: {
+                    'gaps_has_ssl': 'SSL', 'gaps_ssl_issues': 'SSL Issues', 'gaps_missing_favicon': 'Missing Favicon', 'gaps_outdated_footer_year': 'Outdated Footer',
+                    'gaps_placeholder_text_found': 'Placeholder Text', 'gaps_conflicting_ctas': 'Conflicting CTAs', 'gaps_cta_count': 'CTA Count',
+                    'gaps_cta_unique_actions': 'Unique CTA Actions', 'gaps_broken_links': 'Broken Links', 'gaps_technical_issues_summary': 'Issues Summary' }},
+                { name: 'Audience Signals', group: 'main', open: true, fields: {
+                    'audience_serves_multiple_audiences': 'Multiple Audiences', 'audience_audience_segments': 'Segments', 'audience_has_active_blog': 'Active Blog',
+                    'audience_latest_blog_date': 'Latest Blog', 'audience_has_podcast': 'Podcast', 'audience_has_youtube': 'YouTube',
+                    'audience_testimonial_count': 'Testimonials', 'audience_social_proof_media_mentions': 'Media Mentions' }},
+                { name: 'Paid Ads', group: 'main', fields: {
+                    'ads_has_facebook_pixel': 'Facebook Pixel', 'ads_has_google_ads_tag': 'Google Ads', 'ads_likely_running_paid': 'Running Paid Ads',
+                    'fbads_fb_ads_found': 'FB Ads Active', 'fbads_fb_ads_count': 'FB Ad Count', 'fbads_fb_ads_library_url': 'Ad Library' }},
+                { name: 'PageSpeed', group: 'main', fields: {
+                    'pagespeed_score_performance': 'Performance', 'pagespeed_score_accessibility': 'Accessibility', 'pagespeed_score_seo': 'SEO',
+                    'pagespeed_score_best_practices': 'Best Practices', 'pagespeed_lcp_seconds': 'LCP (s)', 'pagespeed_fcp_seconds': 'FCP (s)',
+                    'pagespeed_cls': 'CLS', 'pagespeed_tbt_ms': 'TBT (ms)', 'pagespeed_opportunities': 'Opportunities' }},
+                { name: 'Social Media', group: 'main', fields: {
+                    'social_instagram_url': 'Instagram', 'social_instagram_followers': 'IG Followers', 'social_linkedin_url': 'LinkedIn',
+                    'social_linkedin_followers': 'LI Followers', 'social_youtube_url': 'YouTube', 'social_youtube_subscribers': 'YT Subscribers',
+                    'social_twitter_url': 'Twitter/X', 'social_twitter_followers': 'X Followers', 'social_facebook_url': 'Facebook',
+                    'social_tiktok_url': 'TikTok', 'social_social_total_followers': 'Total Followers', 'social_social_summary': 'Summary' }},
+                { name: 'External Domains', group: 'main', fields: {
+                    'external_domains': 'Domains Found', 'external_link_count': 'Link Count', 'funnel_has_secondary_domain': 'Secondary Domain',
+                    'funnel_secondary_funnel_platform': 'Funnel Platform' }},
+                { name: 'Team', group: 'main', fields: {
+                    'team_solo_or_multi_coach': 'Solo/Multi', 'team_team_page_exists': 'Team Page', 'team_team_coach_count': 'Coach Count', 'team_team_coach_names': 'Names' }},
+                { name: 'Recency', group: 'main', fields: {
+                    'timing_site_looks_recent': 'Freshness', 'timing_copyright_year': 'Copyright Year', 'timing_domain_age_years': 'Domain Age',
+                    'timing_newest_content_date': 'Newest Content', 'timing_sitemap_last_updated': 'Sitemap Updated', 'timing_http_last_modified': 'Last Modified',
+                    'timing_now_enrolling_banner': 'Enrolling Banner', 'timing_upcoming_events': 'Events', 'timing_hiring_indicators': 'Hiring' }},
+                { name: 'Site Crawl', group: 'main', fields: {
+                    'crawl_pages_found': 'Pages Found', 'crawl_pages_scraped': 'Pages Scraped', 'crawl_all_emails': 'Emails', 'crawl_all_phones': 'Phones',
+                    'crawl_all_prices': 'Prices', 'crawl_price_range': 'Price Range', 'crawl_total_testimonials': 'Testimonials' }},
+                // Advanced
+                { name: 'Anti-Signals', group: 'advanced', fields: {
+                    'antisignal_has_full_automation_platform': 'Automation Platform', 'antisignal_automation_platform_name': 'Platform',
+                    'antisignal_detected_on_domain': 'Detected On', 'antisignal_has_gohighlevel': 'GoHighLevel', 'antisignal_has_clickfunnels': 'ClickFunnels',
+                    'antisignal_has_kajabi': 'Kajabi', 'antisignal_has_kartra': 'Kartra' }},
+                { name: 'Booking Branding', group: 'advanced', fields: {
+                    'bookingbrand_booking_page_branding_score': 'Score', 'bookingbrand_booking_page_url': 'URL',
+                    'bookingbrand_booking_page_has_description': 'Description', 'bookingbrand_booking_page_hook': 'Hook' }},
+                { name: 'Redirects', group: 'advanced', fields: {
+                    'redirects_booking_redirect_count': 'Hops', 'redirects_booking_redirect_chain': 'Chain', 'redirects_booking_redirect_hook': 'Hook' }},
+                { name: 'CTA Destinations', group: 'advanced', fields: {
+                    'gaps_cta_unique_destinations': 'Unique Destinations', 'gaps_cta_destination_mismatch': 'Mismatch', 'gaps_cta_mismatch_hook': 'Hook' }},
+                { name: 'Form Friction', group: 'advanced', fields: {
+                    'forms_forms_found': 'Forms', 'forms_longest_form_fields': 'Longest Form Fields', 'forms_high_friction_form': 'High Friction', 'forms_form_friction_hook': 'Hook' }},
+                { name: 'Confirmations', group: 'advanced', fields: {
+                    'confirmation_confirmation_pages_found': 'Pages', 'confirmation_worst_confirmation_quality': 'Quality', 'confirmation_confirmation_hook': 'Hook' }},
+                { name: 'Schema', group: 'advanced', fields: {
+                    'schema_has_schema_markup': 'Has Schema', 'schema_schema_types_found': 'Types', 'schema_has_business_schema': 'Business',
+                    'schema_has_review_schema': 'Reviews', 'schema_schema_gap_hook': 'Hook' }},
+                { name: 'Confidence', group: 'advanced', fields: { '_confidence': 'Levels' }},
+            ];
 
-            // Advanced categories (hidden by default)
-            const advancedCategories = {
-                'Anti-Signal Detection': {
-                    format: {
-                        'antisignal_has_full_automation_platform': 'Full Automation Platform',
-                        'antisignal_automation_platform_name': 'Platform Name',
-                        'antisignal_detected_on_domain': 'Detected On Domain',
-                        'antisignal_has_gohighlevel': 'GoHighLevel',
-                        'antisignal_has_clickfunnels': 'ClickFunnels',
-                        'antisignal_has_kajabi': 'Kajabi',
-                        'antisignal_has_kartra': 'Kartra',
-                        'antisignal_has_keap_infusionsoft': 'Keap/Infusionsoft',
-                    }
-                },
-                'Booking Page Branding': {
-                    format: {
-                        'bookingbrand_booking_page_branding_score': 'Branding Score',
-                        'bookingbrand_booking_page_url': 'Booking Page URL',
-                        'bookingbrand_booking_page_has_description': 'Has Description',
-                        'bookingbrand_booking_page_has_photo': 'Has Photo',
-                        'bookingbrand_booking_page_has_custom_colors': 'Custom Colors',
-                        'bookingbrand_booking_page_word_count': 'Word Count',
-                        'bookingbrand_booking_page_hook': 'Hook',
-                    }
-                },
-                'Booking Redirect Chain': {
-                    format: {
-                        'redirects_booking_redirect_count': 'Redirect Count',
-                        'redirects_booking_redirect_chain': 'Redirect Chain',
-                        'redirects_booking_redirect_excessive': 'Excessive Redirects',
-                        'redirects_booking_redirect_hook': 'Hook',
-                    }
-                },
-                'CTA Destinations': {
-                    format: {
-                        'gaps_cta_unique_destinations': 'Unique Destinations',
-                        'gaps_cta_destination_mismatch': 'Destination Mismatch',
-                        'gaps_cta_destinations': 'CTA Destination Map',
-                        'gaps_cta_mismatch_hook': 'Hook',
-                    }
-                },
-                'Form Friction Analysis': {
-                    format: {
-                        'forms_forms_found': 'Forms Found',
-                        'forms_longest_form_fields': 'Longest Form (fields)',
-                        'forms_longest_form_url': 'Longest Form URL',
-                        'forms_longest_form_type': 'Form Type',
-                        'forms_high_friction_form': 'High Friction',
-                        'forms_form_friction_hook': 'Hook',
-                    }
-                },
-                'Confirmation Page Quality': {
-                    format: {
-                        'confirmation_confirmation_pages_found': 'Pages Found',
-                        'confirmation_worst_confirmation_quality': 'Worst Quality',
-                        'confirmation_confirmation_hook': 'Hook',
-                        'confirmation_confirmation_pages': 'Page Details',
-                    }
-                },
-                'Schema / Structured Data': {
-                    format: {
-                        'schema_has_schema_markup': 'Has Schema Markup',
-                        'schema_schema_types_found': 'Types Found',
-                        'schema_has_business_schema': 'Business Schema',
-                        'schema_has_faq_schema': 'FAQ Schema',
-                        'schema_has_review_schema': 'Review Schema',
-                        'schema_has_service_schema': 'Service Schema',
-                        'schema_schema_gap_hook': 'Hook',
-                    }
-                },
-                'Data Confidence': {
-                    format: {
-                        '_confidence': 'Confidence Levels',
-                    }
-                },
-            };
-
-            // Helper: format a value for display
-            function formatValue(key, value) {
-                let displayVal = value;
-                let valClass = '';
-
+            // Format value helper
+            function fmtVal(key, value) {
+                let d = value, cls = '';
                 if (Array.isArray(value)) {
-                    if (value.length === 0) { displayVal = 'None'; }
-                    else if (typeof value[0] === 'object') { displayVal = value.map(v => v.text || v.url || JSON.stringify(v)).join(', '); }
-                    else { displayVal = value.join(', '); }
+                    d = value.length === 0 ? 'None' : typeof value[0] === 'object' ? value.map(v => v.text || v.url || JSON.stringify(v)).join(', ') : value.join(', ');
+                } else if (key === '_confidence' && typeof value === 'object') {
+                    d = Object.entries(value).map(([k, v]) => `<span class="conf-badge conf-${v.toLowerCase()}">${k}: ${v}</span>`).join(' ');
+                    return { d, cls };
                 } else if (typeof value === 'object' && value !== null) {
-                    // Confidence dict: render as colored badges
-                    if (key === '_confidence') {
-                        displayVal = Object.entries(value).map(([k, v]) => {
-                            const cls = v === 'HIGH' ? 'conf-high' : v === 'MEDIUM' ? 'conf-medium' : v === 'LOW' ? 'conf-low' : 'conf-none';
-                            return `<span class="${cls}">${k}: ${v}</span>`;
-                        }).join(' &middot; ');
-                        return { displayVal, valClass: '' };
-                    }
-                    displayVal = JSON.stringify(value);
+                    d = JSON.stringify(value);
                 } else if (typeof value === 'boolean') {
-                    displayVal = value ? 'Yes' : 'No';
-                    if (key.includes('broken') || key.includes('missing') || key.includes('outdated') || key.includes('placeholder') || key.includes('conflicting') || key.includes('no_context') || key.includes('excessive')) {
-                        valClass = value ? 'bad' : 'good';
-                    } else {
-                        valClass = value ? 'good' : 'warn';
-                    }
+                    d = value ? 'Yes' : 'No';
+                    const neg = key.includes('broken') || key.includes('missing') || key.includes('outdated') || key.includes('placeholder') || key.includes('conflicting') || key.includes('excessive') || key.includes('no_context') || key.includes('mismatch');
+                    cls = neg ? (value ? 'bad' : 'good') : (value ? 'good' : 'warn');
                 }
-
-                // PageSpeed score coloring
-                if (key.startsWith('pagespeed_score_') && typeof value === 'number') {
-                    valClass = value >= 90 ? 'ps-good' : value >= 50 ? 'ps-mid' : 'ps-bad';
-                    displayVal = value + '/100';
+                if (key.startsWith('pagespeed_score_') && typeof value === 'number') { cls = value >= 90 ? 'ps-good' : value >= 50 ? 'ps-mid' : 'ps-bad'; d = value + '/100'; }
+                if (typeof d === 'string' && /^https?:\/\//.test(d)) {
+                    const short = d.length > 50 ? d.substring(0, 48) + '...' : d;
+                    d = `<a href="${d}" target="_blank" rel="noopener">${short}</a>`;
                 }
-
-                // Make URLs clickable
-                if (typeof displayVal === 'string' && displayVal.match(/^https?:\/\//)) {
-                    displayVal = `<a href="${displayVal}" target="_blank" rel="noopener">${displayVal}</a>`;
-                }
-
-                return { displayVal, valClass };
+                return { d, cls };
             }
 
-            // Helper: build a collapsible category section
-            function buildCategory(catName, catInfo, startOpen) {
-                const section = document.createElement('div');
-                section.className = 'result-category' + (startOpen ? '' : ' collapsed');
-
-                const header = document.createElement('div');
-                header.className = 'result-category-header';
-                header.innerHTML = `<h3>${catName}</h3><span class="toggle-icon">&#9660;</span>`;
-                header.addEventListener('click', () => section.classList.toggle('collapsed'));
-                section.appendChild(header);
-
-                const body = document.createElement('div');
-                body.className = 'result-category-body';
-
-                let hasRows = false;
-                for (const [key, label] of Object.entries(catInfo.format)) {
-                    let value = results[key];
-                    if (value === undefined || value === null || value === '') continue;
-
-                    hasRows = true;
-                    const row = document.createElement('div');
-                    row.className = 'result-row';
-                    const { displayVal, valClass } = formatValue(key, value);
-                    row.innerHTML = `
-                        <span class="result-key">${label}</span>
-                        <span class="result-value ${valClass}">${displayVal}</span>
-                    `;
-                    body.appendChild(row);
+            // Build categories
+            function buildCat(cat) {
+                const sec = document.createElement('div');
+                sec.className = 'result-category' + (cat.open ? '' : ' collapsed');
+                sec.dataset.catName = cat.name;
+                let rowCount = 0;
+                const bodyHtml = [];
+                for (const [key, label] of Object.entries(cat.fields)) {
+                    const val = results[key];
+                    if (val === undefined || val === null || val === '') continue;
+                    rowCount++;
+                    const { d, cls } = fmtVal(key, val);
+                    bodyHtml.push(`<div class="result-row"><span class="result-key">${label}</span><span class="result-value ${cls}">${d}</span></div>`);
                 }
-
-                section.appendChild(body);
-                return hasRows ? section : null;
+                if (rowCount === 0) return null;
+                sec.innerHTML = `<div class="result-category-header"><h3>${cat.name} <span class="cat-count">${rowCount}</span></h3><span class="toggle-icon">&#9660;</span></div><div class="result-category-body">${bodyHtml.join('')}</div>`;
+                sec.querySelector('.result-category-header').addEventListener('click', () => sec.classList.toggle('collapsed'));
+                return sec;
             }
+
+            // Section nav pills
+            const navC = $('#section-nav-container');
+            navC.innerHTML = '';
+            const nav = document.createElement('div');
+            nav.className = 'section-nav';
 
             // Render main categories
-            for (const [catName, catInfo] of Object.entries(mainCategories)) {
-                const el = buildCategory(catName, catInfo, catInfo.open || false);
-                if (el) grid.appendChild(el);
+            const mainCats = allCategories.filter(c => c.group === 'main');
+            const advCats = allCategories.filter(c => c.group === 'advanced');
+
+            for (const cat of mainCats) {
+                const el = buildCat(cat);
+                if (el) {
+                    grid.appendChild(el);
+                    const pill = document.createElement('span');
+                    pill.className = 'section-nav-pill';
+                    pill.textContent = cat.name;
+                    pill.addEventListener('click', () => {
+                        el.classList.remove('collapsed');
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        document.querySelectorAll('.section-nav-pill').forEach(p => p.classList.remove('active'));
+                        pill.classList.add('active');
+                    });
+                    nav.appendChild(pill);
+                }
             }
+            if (nav.children.length > 0) navC.appendChild(nav);
 
             // Advanced toggle
-            let hasAdvanced = false;
-            const advancedEls = [];
-            for (const [catName, catInfo] of Object.entries(advancedCategories)) {
-                const el = buildCategory(catName, catInfo, false);
-                if (el) { advancedEls.push(el); hasAdvanced = true; }
+            let hasAdv = false;
+            const advEls = [];
+            for (const cat of advCats) {
+                const el = buildCat(cat);
+                if (el) { advEls.push(el); hasAdv = true; }
             }
 
-            if (hasAdvanced) {
+            if (hasAdv) {
                 const toggleDiv = document.createElement('div');
                 toggleDiv.className = 'advanced-toggle';
                 toggleDiv.innerHTML = '<button>Show Advanced Details</button>';
                 grid.appendChild(toggleDiv);
 
-                const advancedContainer = document.createElement('div');
-                advancedContainer.className = 'results-grid two-col hidden';
-                advancedContainer.id = 'advanced-sections';
-                advancedContainer.style.gridColumn = '1 / -1';
-                advancedEls.forEach(el => advancedContainer.appendChild(el));
-                grid.appendChild(advancedContainer);
+                const advGrid = document.createElement('div');
+                advGrid.className = 'results-grid two-col hidden';
+                advGrid.id = 'advanced-sections';
+                advGrid.style.gridColumn = '1 / -1';
+                advEls.forEach(el => advGrid.appendChild(el));
+                grid.appendChild(advGrid);
 
                 toggleDiv.querySelector('button').addEventListener('click', function() {
-                    const adv = $('#advanced-sections');
-                    const hidden = adv.classList.toggle('hidden');
-                    this.textContent = hidden ? 'Show Advanced Details' : 'Hide Advanced Details';
+                    const a = $('#advanced-sections');
+                    const h = a.classList.toggle('hidden');
+                    this.textContent = h ? 'Show Advanced Details' : 'Hide Advanced Details';
                 });
             }
         }
 
-        $('#url-back-btn').addEventListener('click', () => {
-            $('#urlInput').value = '';
-            showStep('upload');
-        });
+        $('#url-back-btn').addEventListener('click', () => { $('#urlInput').value = ''; showStep('upload'); });
 
-        // Copy JSON to clipboard
         $('#copy-json-btn').addEventListener('click', () => {
             if (_lastResults) {
                 navigator.clipboard.writeText(JSON.stringify(_lastResults, null, 2)).then(() => {
-                    const btn = $('#copy-json-btn');
-                    btn.textContent = 'Copied!';
-                    setTimeout(() => { btn.textContent = 'Copy JSON'; }, 2000);
+                    const b = $('#copy-json-btn'); b.textContent = 'Copied!'; setTimeout(() => { b.textContent = 'Copy JSON'; }, 2000);
                 });
             }
         });
 
-        // Health check on page load
+        // Health check
         (async function checkHealth() {
             try {
                 const res = await fetch('/health');
                 const data = await res.json();
                 const bar = $('#health-bar');
-                bar.innerHTML = '<span class="health-title">Services:</span>';
+                bar.innerHTML = '<span class="health-title">Services</span>';
                 for (const [key, check] of Object.entries(data.checks)) {
                     const chip = document.createElement('span');
                     chip.className = 'health-chip ' + (check.connected ? 'ok' : 'fail');
@@ -1448,8 +798,7 @@
                     bar.appendChild(chip);
                 }
             } catch (e) {
-                const bar = $('#health-bar');
-                bar.innerHTML = '<span class="health-title">Services:</span><span class="health-chip fail"><span class="dot"></span>Could not reach server</span>';
+                $('#health-bar').innerHTML = '<span class="health-title">Services</span><span class="health-chip fail"><span class="dot"></span>Server unreachable</span>';
             }
         })();
     </script>
