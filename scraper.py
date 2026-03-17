@@ -11,6 +11,7 @@ Scrapes websites against a 6-category checklist:
 
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -62,13 +63,70 @@ try:
 except ImportError:
     HAS_CLAUDE = False
 
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/120.0.0.0 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    "Accept-Language": "en-US,en;q=0.9",
-}
+# Rotating User-Agent pool — different fingerprint per request
+_USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0",
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
+]
+
+_BROWSER_USER_AGENTS = [
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/121.0.6167.66 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.101 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.280 Mobile Safari/537.36",
+]
+
+
+def _get_headers():
+    """Get request headers with a random User-Agent."""
+    return {
+        "User-Agent": random.choice(_USER_AGENTS),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Connection": "keep-alive",
+    }
+
+
+# Keep a static copy for session default
+HEADERS = _get_headers()
+
+
+def _random_delay(min_s=0.5, max_s=2.0):
+    """Random delay to avoid detection patterns."""
+    time.sleep(random.uniform(min_s, max_s))
+
+
+def _retry_request(method, url, max_retries=2, **kwargs):
+    """Make an HTTP request with retry + exponential backoff on 403/429/5xx."""
+    kwargs.setdefault("timeout", TIMEOUT)
+    for attempt in range(max_retries + 1):
+        try:
+            # Rotate UA per-request via headers kwarg (thread-safe)
+            req_headers = kwargs.pop("headers", {}) or {}
+            req_headers["User-Agent"] = random.choice(_USER_AGENTS)
+            kwargs["headers"] = req_headers
+            resp = method(url, **kwargs)
+            if resp.status_code in (403, 429, 503) and attempt < max_retries:
+                wait = (2 ** attempt) + random.uniform(0.5, 1.5)
+                time.sleep(wait)
+                continue
+            return resp
+        except Exception:
+            if attempt < max_retries:
+                time.sleep(2 ** attempt)
+                continue
+            raise
+    return None
 
 TIMEOUT = 15
 MAX_WORKERS = 25  # Full mode — 15 browser pool, extra workers handle non-browser tasks
@@ -150,7 +208,7 @@ atexit.register(_browser_pool.shutdown)
 
 # Shared requests.Session for connection pooling (DNS cache + keep-alive)
 _http_session = requests.Session()
-_http_session.headers.update(HEADERS)
+_http_session.headers.update(_get_headers())
 
 
 BOOKING_TOOLS = {
@@ -169,9 +227,11 @@ BOOKING_TOOLS = {
 
 
 def fetch_page_simple(url, timeout=TIMEOUT):
-    """Fetch a page with requests (no JS). Uses shared session for connection pooling."""
+    """Fetch a page with requests (no JS). Uses retry + rotating UA."""
     try:
-        resp = _http_session.get(url, timeout=timeout, allow_redirects=True)
+        resp = _retry_request(_http_session.get, url, timeout=timeout, allow_redirects=True)
+        if resp is None:
+            return None, None
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         return resp, soup
@@ -199,10 +259,11 @@ def fetch_page_browser(url, timeout=30000):
     if not browser:
         return fetch_page_simple(url)
 
+    context = None
     try:
         context = browser.new_context(
             viewport={"width": 390, "height": 844},  # Mobile viewport
-            user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+            user_agent=random.choice(_BROWSER_USER_AGENTS),
         )
         page = context.new_page()
 
@@ -229,6 +290,7 @@ def fetch_page_browser(url, timeout=30000):
             pass
 
         context.close()
+        context = None
 
         result = BrowserResult(final_url, content, status, elapsed, headers)
         result.mobile_cta_visible = mobile_cta_visible
@@ -239,6 +301,11 @@ def fetch_page_browser(url, timeout=30000):
     except Exception:
         return fetch_page_simple(url)
     finally:
+        try:
+            if context:
+                context.close()
+        except Exception:
+            pass
         try:
             _browser_pool.release(browser)
         except Exception:
@@ -2378,6 +2445,7 @@ def check_facebook_ads(url):
         if HAS_PLAYWRIGHT:
             browser = _browser_pool.acquire(timeout=15)
             if browser:
+                context = None
                 try:
                     context = browser.new_context()
                     page = context.new_page()
@@ -2420,9 +2488,15 @@ def check_facebook_ads(url):
                                 pass
 
                     context.close()
+                    context = None
                 except Exception:
                     data["fb_ads_status"] = "Check failed (browser error)"
                 finally:
+                    try:
+                        if context:
+                            context.close()
+                    except Exception:
+                        pass
                     try:
                         _browser_pool.release(browser)
                     except Exception:
@@ -2496,11 +2570,12 @@ def scrape_social_profiles(soup, html):
 
     try:
         context = browser.new_context(
-            user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            user_agent=random.choice(_USER_AGENTS),
         )
 
         for platform, handle in found_profiles.items():
             profile = {"handle": handle, "followers": None, "last_post": None, "posts_visible": 0}
+            _random_delay(1.0, 2.5)  # Delay between social platforms to avoid detection
 
             try:
                 page = context.new_page()
@@ -2820,6 +2895,9 @@ def scrape_website(url, fast=False):
     url = normalize_url(url)
     if not url:
         return {"scrape_status": "no_url"}
+
+    # Stagger concurrent requests to avoid burst patterns
+    _random_delay(0.3, 1.5)
 
     intel = {"website_url": url, "scrape_mode": "fast" if fast else "full"}
 

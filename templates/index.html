@@ -510,7 +510,11 @@
 
         $('#start-btn').addEventListener('click', async () => {
             const mode = document.querySelector('input[name="scrape-mode"]:checked').value;
-            await fetch(`/start/${currentJobId}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode}) });
+            try {
+                const res = await fetch(`/start/${currentJobId}`, { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({mode}) });
+                const data = await res.json();
+                if (data.error) { alert(data.error); return; }
+            } catch (e) { alert('Could not reach server. Please check it is running.'); return; }
             showStep('progress');
             pollInterval = setInterval(pollStatus, 1000);
         });
@@ -555,15 +559,25 @@
             $('#url-loading').classList.remove('hidden');
             $('#url-results-content').classList.add('hidden');
             $('#url-scraping').textContent = url;
-            const res = await fetch('/scrape-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
-            const data = await res.json();
+            let res, data;
+            try {
+                res = await fetch('/scrape-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+                data = await res.json();
+            } catch (e) { alert('Could not reach server. Please check it is running.'); showStep('upload'); return; }
             if (data.error) { alert(data.error); showStep('upload'); return; }
             const jobId = data.job_id;
+            let urlPollErrors = 0;
             const poll = setInterval(async () => {
-                const sr = await fetch(`/status/${jobId}`);
-                const sd = await sr.json();
-                if (sd.status === 'done') { clearInterval(poll); $('#url-loading').classList.add('hidden'); $('#url-results-content').classList.remove('hidden'); $('#url-download-btn').href = `/download/${jobId}`; renderUrlResults(sd.results); }
-                if (sd.status === 'error') { clearInterval(poll); alert('Error: ' + sd.error); showStep('upload'); }
+                try {
+                    const sr = await fetch(`/status/${jobId}`);
+                    const sd = await sr.json();
+                    urlPollErrors = 0;
+                    if (sd.status === 'done') { clearInterval(poll); $('#url-loading').classList.add('hidden'); $('#url-results-content').classList.remove('hidden'); $('#url-download-btn').href = `/download/${jobId}`; renderUrlResults(sd.results); }
+                    if (sd.status === 'error') { clearInterval(poll); alert('Error: ' + sd.error); showStep('upload'); }
+                } catch (e) {
+                    urlPollErrors++;
+                    if (urlPollErrors >= 5) { clearInterval(poll); alert('Lost connection to server. Please refresh.'); showStep('upload'); }
+                }
             }, 1000);
         }
 
