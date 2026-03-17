@@ -504,7 +504,7 @@
                 const fast = radio.value === 'fast';
                 $('#mode-fast-label').style.cssText = fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
                 $('#mode-full-label').style.cssText = !fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
-                $('#mode-desc').textContent = fast ? '10 parallel workers · skips Playwright, FB ads, social, crawl · ~10-15s/site' : '3 parallel workers · full Playwright + AI analysis · ~45-60s/site';
+                $('#mode-desc').textContent = fast ? '10 parallel workers · skips Playwright, FB ads, social, crawl · ~10-15s/site' : '8 parallel workers · full Playwright + AI analysis · ~20-25s/site';
             });
         });
 
