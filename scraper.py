@@ -2770,11 +2770,11 @@ def scrape_website(url):
     all_external_links.extend(homepage_ext_links)
     all_external_domains.update(homepage_ext_domains)
 
-    # Only scan subpages likely to contain funnel links
-    FUNNEL_RELEVANT_SUBPAGES = ["about", "pricing", "services", "contact", "testimonials"]
+    # Scan all discovered subpages except blog/podcast (slow, unlikely to have funnel links)
+    SKIP_SUBPAGES = ["blog", "podcast"]
 
     for subpage_key, subpage_url in subpages.items():
-        if subpage_key not in FUNNEL_RELEVANT_SUBPAGES:
+        if subpage_key in SKIP_SUBPAGES:
             continue
         try:
             _, subpage_soup = fetch_page_simple(subpage_url, timeout=8)
