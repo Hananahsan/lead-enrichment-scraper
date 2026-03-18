@@ -2479,66 +2479,72 @@ def check_facebook_ads(url):
         ad_library_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={domain}&search_type=keyword_unordered"
 
         if HAS_PLAYWRIGHT:
-            browser = _browser_pool.acquire(timeout=15)
-            if browser:
-                context = None
-                try:
-                    context = browser.new_context(user_agent=random.choice(_USER_AGENTS))
-                    page = context.new_page()
-                    page.goto(ad_library_url, wait_until="domcontentloaded", timeout=20000)
-                    page.wait_for_timeout(5000)
+            # Use a dedicated Playwright instance on this thread to avoid
+            # cross-thread greenlet errors with the shared browser pool.
+            pw = None
+            browser = None
+            context = None
+            try:
+                pw = sync_playwright().start()
+                browser = pw.chromium.launch(headless=True)
+                context = browser.new_context(user_agent=random.choice(_USER_AGENTS))
+                page = context.new_page()
+                page.goto(ad_library_url, wait_until="domcontentloaded", timeout=20000)
+                page.wait_for_timeout(5000)
 
-                    content = page.content()
-                    page_text = page.inner_text("body") if page.query_selector("body") else ""
+                content = page.content()
+                page_text = page.inner_text("body") if page.query_selector("body") else ""
 
-                    results_match = re.search(r"(\d+)\s*results?", page_text, re.I)
-                    no_results = re.search(r"no\s*results|didn.?t\s*find|0\s*results", page_text, re.I)
+                results_match = re.search(r"(\d+)\s*results?", page_text, re.I)
+                no_results = re.search(r"no\s*results|didn.?t\s*find|0\s*results", page_text, re.I)
 
-                    if no_results:
-                        data["fb_ads_found"] = False
-                        data["fb_ads_status"] = "No active ads found"
-                    elif results_match:
-                        count = int(results_match.group(1))
-                        if count > 0:
-                            data["fb_ads_found"] = True
-                            data["fb_ads_count"] = count
-                            data["fb_ads_status"] = f"{count} active ad(s) found"
-                        else:
-                            data["fb_ads_status"] = "No active ads found"
+                if no_results:
+                    data["fb_ads_found"] = False
+                    data["fb_ads_status"] = "No active ads found"
+                elif results_match:
+                    count = int(results_match.group(1))
+                    if count > 0:
+                        data["fb_ads_found"] = True
+                        data["fb_ads_count"] = count
+                        data["fb_ads_status"] = f"{count} active ad(s) found"
                     else:
-                        ad_cards = page.query_selector_all('[class*="ad"], [data-testid*="ad"]')
-                        if ad_cards and len(ad_cards) > 0:
-                            data["fb_ads_found"] = True
-                            data["fb_ads_count"] = len(ad_cards)
-                            data["fb_ads_status"] = f"~{len(ad_cards)} ad(s) detected"
-                        else:
-                            data["fb_ads_status"] = "Could not determine (page structure changed)"
+                        data["fb_ads_status"] = "No active ads found"
+                else:
+                    ad_cards = page.query_selector_all('[class*="ad"], [data-testid*="ad"]')
+                    if ad_cards and len(ad_cards) > 0:
+                        data["fb_ads_found"] = True
+                        data["fb_ads_count"] = len(ad_cards)
+                        data["fb_ads_status"] = f"~{len(ad_cards)} ad(s) detected"
+                    else:
+                        data["fb_ads_status"] = "Could not determine (page structure changed)"
 
-                    if data["fb_ads_found"]:
-                        ad_elements = page.query_selector_all('[class*="ad-card"], [class*="_7jyr"]')
-                        for i, el in enumerate(ad_elements[:3]):
-                            try:
-                                ad_text = el.inner_text()[:200]
-                                data["fb_ads_details"].append(ad_text)
-                            except Exception:
-                                pass
+                if data["fb_ads_found"]:
+                    ad_elements = page.query_selector_all('[class*="ad-card"], [class*="_7jyr"]')
+                    for i, el in enumerate(ad_elements[:3]):
+                        try:
+                            ad_text = el.inner_text()[:200]
+                            data["fb_ads_details"].append(ad_text)
+                        except Exception:
+                            pass
 
-                    context.close()
-                    context = None
+            except Exception:
+                data["fb_ads_status"] = "Check failed (browser error)"
+            finally:
+                try:
+                    if context:
+                        context.close()
                 except Exception:
-                    data["fb_ads_status"] = "Check failed (browser error)"
-                finally:
-                    try:
-                        if context:
-                            context.close()
-                    except Exception:
-                        pass
-                    try:
-                        _browser_pool.release(browser)
-                    except Exception:
-                        pass
-            else:
-                data["fb_ads_status"] = "Browser pool busy"
+                    pass
+                try:
+                    if browser:
+                        browser.close()
+                except Exception:
+                    pass
+                try:
+                    if pw:
+                        pw.stop()
+                except Exception:
+                    pass
         else:
             # Without Playwright, try a simple heuristic check via the website itself
             # Check if site has Facebook Pixel (already done in ads analysis)
@@ -2598,14 +2604,14 @@ def scrape_social_profiles(soup, html):
     total_followers = 0
     platform_activity = {}
 
-    browser = _browser_pool.acquire(timeout=15)
-    if not browser:
-        data["social_profiles"] = {p: {"handle": h, "url": f"https://{p}.com/{h}"} for p, h in found_profiles.items()}
-        data["social_summary"] = f"Found {len(found_profiles)} profile(s), browser pool busy"
-        return data
-
+    # Use a dedicated Playwright instance on this thread to avoid
+    # cross-thread greenlet errors with the shared browser pool.
+    pw = None
+    browser = None
     context = None
     try:
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=True)
         context = browser.new_context(
             user_agent=random.choice(_BROWSER_USER_AGENTS),
         )
@@ -2710,9 +2716,6 @@ def scrape_social_profiles(soup, html):
 
             data["social_profiles"][platform] = profile
 
-        context.close()
-        context = None
-
     except Exception:
         data["social_summary"] = "Social scraping failed"
     finally:
@@ -2722,7 +2725,13 @@ def scrape_social_profiles(soup, html):
         except Exception:
             pass
         try:
-            _browser_pool.release(browser)
+            if browser:
+                browser.close()
+        except Exception:
+            pass
+        try:
+            if pw:
+                pw.stop()
         except Exception:
             pass
 
