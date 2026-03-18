@@ -458,6 +458,19 @@
         let pollInterval = null;
         const $ = (sel) => document.querySelector(sel);
 
+        function esc(str) {
+            if (str == null) return '';
+            const d = document.createElement('div');
+            d.textContent = String(str);
+            return d.innerHTML;
+        }
+
+        function safeUrl(url) {
+            if (!url) return '#';
+            const s = String(url).trim();
+            return (s.startsWith('http://') || s.startsWith('https://')) ? esc(s) : '#';
+        }
+
         function showStep(step) {
             ['upload', 'preview', 'progress', 'done', 'url-results'].forEach(s => {
                 $(`#step-${s}`).classList.toggle('hidden', s !== step);
@@ -531,7 +544,7 @@
                 return;
             }
             pollErrors = 0;
-            if (data.error) return;
+            if (data.error) { pollErrors++; if (pollErrors >= 5) { clearInterval(pollInterval); alert('Job not found. Please try again.'); showStep('upload'); } return; }
             const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
             $('#progress-bar').style.width = pct + '%';
             $('#progress-count').textContent = `${data.current} / ${data.total}`;
@@ -604,11 +617,11 @@
             heroC.innerHTML = `<div class="score-hero">
                 <div class="score-ring ${scoreNum !== null ? scoreClass : 'score-mid'}">${scoreNum !== null ? scoreNum + '<span class="score-sub">/10</span>' : '-'}</div>
                 <div class="score-meta">
-                    <h2>${siteUrl}</h2>
-                    <div class="classification">${classification || ''}</div>
-                    <span class="icp-badge ${icpClass}">ICP FIT: ${icpFit || 'N/A'}</span>
+                    <h2>${esc(siteUrl)}</h2>
+                    <div class="classification">${esc(classification)}</div>
+                    <span class="icp-badge ${icpClass}">ICP FIT: ${esc(icpFit) || 'N/A'}</span>
                 </div>
-                ${justification ? `<div class="score-justification">${justification}</div>` : ''}
+                ${justification ? `<div class="score-justification">${esc(justification)}</div>` : ''}
             </div>`;
 
             // === QUICK STATS ===
@@ -646,13 +659,13 @@
                 for (const field of aiFields) {
                     const val = results[field.key];
                     if (!val) continue;
-                    let content = val;
+                    let content = esc(val);
                     if (field.key === 'ai_outreach_hooks') {
                         const lines = val.split(/\n/).filter(l => l.trim());
                         const items = lines.map(l => l.replace(/^\d+[\.\)]\s*/, '').trim()).filter(Boolean);
-                        if (items.length > 1) content = '<ol>' + items.map(i => `<li>${i}</li>`).join('') + '</ol>';
+                        if (items.length > 1) content = '<ol>' + items.map(i => `<li>${esc(i)}</li>`).join('') + '</ol>';
                     }
-                    aiHtml += `<div class="ai-block"><div class="ai-block-label">${field.label}</div><div class="ai-block-content">${content}</div></div>`;
+                    aiHtml += `<div class="ai-block"><div class="ai-block-label">${esc(field.label)}</div><div class="ai-block-content">${content}</div></div>`;
                 }
                 aiHtml += '</div>';
                 aiC.innerHTML = aiHtml;
@@ -728,7 +741,7 @@
                 if (Array.isArray(value)) {
                     d = value.length === 0 ? 'None' : typeof value[0] === 'object' ? value.map(v => v.text || v.url || JSON.stringify(v)).join(', ') : value.join(', ');
                 } else if (key === '_confidence' && typeof value === 'object') {
-                    d = Object.entries(value).map(([k, v]) => `<span class="conf-badge conf-${v.toLowerCase()}">${k}: ${v}</span>`).join(' ');
+                    d = Object.entries(value).map(([k, v]) => { const s = String(v || ''); return `<span class="conf-badge conf-${s.toLowerCase()}">${esc(k)}: ${esc(s)}</span>`; }).join(' ');
                     return { d, cls };
                 } else if (typeof value === 'object' && value !== null) {
                     d = JSON.stringify(value);
@@ -740,7 +753,7 @@
                 if (key.startsWith('pagespeed_score_') && typeof value === 'number') { cls = value >= 90 ? 'ps-good' : value >= 50 ? 'ps-mid' : 'ps-bad'; d = value + '/100'; }
                 if (typeof d === 'string' && /^https?:\/\//.test(d)) {
                     const short = d.length > 50 ? d.substring(0, 48) + '...' : d;
-                    d = `<a href="${d}" target="_blank" rel="noopener">${short}</a>`;
+                    d = `<a href="${safeUrl(d)}" target="_blank" rel="noopener">${esc(short)}</a>`;
                 }
                 return { d, cls };
             }
@@ -757,7 +770,8 @@
                     if (val === undefined || val === null || val === '') continue;
                     rowCount++;
                     const { d, cls } = fmtVal(key, val);
-                    bodyHtml.push(`<div class="result-row"><span class="result-key">${label}</span><span class="result-value ${cls}">${d}</span></div>`);
+                    const safeD = typeof d === 'string' && d.includes('<a ') ? d : esc(d);
+                    bodyHtml.push(`<div class="result-row"><span class="result-key">${esc(label)}</span><span class="result-value ${cls}">${safeD}</span></div>`);
                 }
                 if (rowCount === 0) return null;
                 sec.innerHTML = `<div class="result-category-header"><h3>${cat.name} <span class="cat-count">${rowCount}</span></h3><span class="toggle-icon">&#9660;</span></div><div class="result-category-body">${bodyHtml.join('')}</div>`;

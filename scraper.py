@@ -109,10 +109,10 @@ def _random_delay(min_s=0.5, max_s=2.0):
 def _retry_request(method, url, max_retries=2, **kwargs):
     """Make an HTTP request with retry + exponential backoff on 403/429/5xx."""
     kwargs.setdefault("timeout", TIMEOUT)
+    original_headers = kwargs.pop("headers", {}) or {}
     for attempt in range(max_retries + 1):
         try:
-            # Rotate UA per-request via headers kwarg (thread-safe)
-            req_headers = kwargs.pop("headers", {}) or {}
+            req_headers = dict(original_headers)
             req_headers["User-Agent"] = random.choice(_USER_AGENTS)
             kwargs["headers"] = req_headers
             resp = method(url, **kwargs)
@@ -145,7 +145,11 @@ import queue
 import threading
 
 class BrowserPool:
-    """Pool of reusable Playwright browser instances for concurrent scraping."""
+    """Pool of reusable Playwright browser instances for concurrent scraping.
+
+    Each browser is created with its own Playwright instance on the calling thread.
+    Browsers are reused across requests but must be used from the thread that acquires them.
+    """
 
     def __init__(self, size=4):
         self._size = size
@@ -176,17 +180,30 @@ class BrowserPool:
         """Get a browser from the pool. Blocks if all are in use."""
         self._init_pool()
         try:
-            return self._pool.get(timeout=timeout)
+            browser = self._pool.get(timeout=timeout)
+            # Health check — verify browser is still connected
+            try:
+                browser.contexts  # Will throw if browser crashed
+                return browser
+            except Exception:
+                # Browser is dead, try to get another
+                return self._pool.get(timeout=5) if not self._pool.empty() else None
         except queue.Empty:
             return None
 
     def release(self, browser):
         """Return a browser to the pool."""
         if browser:
-            self._pool.put(browser)
+            try:
+                browser.contexts  # Verify still alive before returning
+                self._pool.put(browser)
+            except Exception:
+                pass  # Discard dead browsers
 
     def shutdown(self):
-        """Close all browsers and Playwright instances."""
+        """Close all browsers and Playwright instances. Suppresses exit errors."""
+        import warnings
+        warnings.filterwarnings("ignore")
         while not self._pool.empty():
             try:
                 browser = self._pool.get_nowait()
@@ -513,10 +530,29 @@ def detect_secondary_funnels(external_links, external_domains):
         "Stan.store": ["stan.store"],
     }
 
-    if external_domains:
+    # Filter out common non-funnel domains (payment, analytics, CDN, social, etc.)
+    ignore_domains = {
+        "stripe.com", "paypal.com", "square.com", "gstatic.com", "googleapis.com",
+        "google.com", "googletagmanager.com", "google-analytics.com", "doubleclick.net",
+        "facebook.com", "instagram.com", "twitter.com", "x.com", "linkedin.com",
+        "youtube.com", "tiktok.com", "pinterest.com", "vimeo.com",
+        "cloudflare.com", "cdn.jsdelivr.net", "unpkg.com", "fonts.googleapis.com",
+        "gravatar.com", "wp.com", "wordpress.com", "wordpress.org",
+        "mailchimp.com", "convertkit.com", "hubspot.com", "aweber.com",
+        "intercom.io", "crisp.chat", "drift.com", "zendesk.com",
+        "hotjar.com", "clarity.ms", "segment.com", "mixpanel.com",
+        "sentry.io", "bugsnag.com", "newrelic.com",
+        "calendly.com", "acuityscheduling.com", "tidycal.com",
+        "typeform.com", "jotform.com", "wufoo.com",
+    }
+
+    # Filter to meaningful external domains
+    meaningful_domains = [d for d in external_domains if not any(d.endswith(ig) for ig in ignore_domains)]
+
+    if meaningful_domains:
         data["has_secondary_domain"] = True
-        data["secondary_domains"] = external_domains[:10]
-        data["secondary_domain_links"] = external_links[:10]
+        data["secondary_domains"] = meaningful_domains[:10]
+        data["secondary_domain_links"] = [l for l in external_links if l.get("domain") in meaningful_domains][:10]
 
         # Check if any external links go to known funnel platforms
         all_urls = " ".join(l["url"] for l in external_links)
@@ -2447,7 +2483,7 @@ def check_facebook_ads(url):
             if browser:
                 context = None
                 try:
-                    context = browser.new_context()
+                    context = browser.new_context(user_agent=random.choice(_USER_AGENTS))
                     page = context.new_page()
                     page.goto(ad_library_url, wait_until="domcontentloaded", timeout=20000)
                     page.wait_for_timeout(5000)
@@ -2568,9 +2604,10 @@ def scrape_social_profiles(soup, html):
         data["social_summary"] = f"Found {len(found_profiles)} profile(s), browser pool busy"
         return data
 
+    context = None
     try:
         context = browser.new_context(
-            user_agent=random.choice(_USER_AGENTS),
+            user_agent=random.choice(_BROWSER_USER_AGENTS),
         )
 
         for platform, handle in found_profiles.items():
@@ -2674,10 +2711,16 @@ def scrape_social_profiles(soup, html):
             data["social_profiles"][platform] = profile
 
         context.close()
+        context = None
 
     except Exception:
         data["social_summary"] = "Social scraping failed"
     finally:
+        try:
+            if context:
+                context.close()
+        except Exception:
+            pass
         try:
             _browser_pool.release(browser)
         except Exception:
@@ -2815,7 +2858,14 @@ OUTREACH HOOKS:
 - Consider: automation platform anti-signals, confirmation page quality, booking page branding gaps, high-friction forms, CTA destination mismatches, booking redirect chains, and missing schema markup]
 
 OVERALL SCORE:
-[X/10 with one-line justification. Factor in ICP fit — a well-built site that doesn't need KairosCal should score lower for outreach purposes even if technically sound]"""
+[X/10 — Score the website's ACTUAL quality as a coaching business, NOT outreach potential. Use this rubric:
+- Booking infrastructure (0-2 pts): Has booking tool? CTA above fold? Low friction? Works properly?
+- Site performance (0-2 pts): PageSpeed 70+? Fast mobile load? No major technical issues?
+- Offer clarity (0-2 pts): Clear pricing? Defined target client? Compelling offer description?
+- Social proof & authority (0-2 pts): Testimonials? Social following? Media mentions? Active content?
+- Professionalism (0-2 pts): No broken links? Good branding? Schema markup? Confirmation pages?
+Add up the points. A 10/10 = world-class coaching site. A 1/10 = barely functional.
+State the score and ONE sentence justifying it by referencing the specific data points above.]"""
 
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)

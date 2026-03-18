@@ -137,10 +137,11 @@ def upload():
         return jsonify({"error": "No file uploaded"}), 400
 
     file = request.files["file"]
-    if not file.filename.endswith(".csv"):
+    if not file.filename or not file.filename.endswith(".csv"):
         return jsonify({"error": "Please upload a CSV file"}), 400
 
     job_id = str(uuid.uuid4())[:8]
+    original_name = file.filename.rsplit(".csv", 1)[0]  # Strip .csv extension
     filepath = os.path.join(app.config["UPLOAD_FOLDER"], f"{job_id}.csv")
     file.save(filepath)
 
@@ -152,6 +153,9 @@ def upload():
         return jsonify({"error": f"Could not parse CSV: {str(e)[:200]}"}), 400
 
     website_col = find_website_column(df.columns)
+
+    # Store original filename for download naming
+    jobs[job_id] = {"original_name": original_name}
 
     return jsonify({
         "job_id": job_id,
@@ -171,12 +175,19 @@ def scrape_url():
         return jsonify({"error": "No URL provided"}), 400
 
     job_id = str(uuid.uuid4())[:8]
+    # Extract domain for download filename — add scheme if missing
+    from urllib.parse import urlparse as _urlparse
+    _parsed = _urlparse(url if "://" in url else f"https://{url}")
+    domain = (_parsed.netloc or _parsed.path.split("/")[0]).replace("www.", "").replace(".", "_")
+    domain = domain or "single_url"
     jobs[job_id] = {
         "status": "running",
         "total": 1,
         "current": 0,
         "current_url": url,
         "stats": {},
+        "original_name": domain,
+        "mode": "full",
         "started_at": datetime.now().isoformat(),
     }
 
@@ -223,6 +234,7 @@ def start(job_id):
 
     data = request.get_json(silent=True) or {}
     fast = data.get("mode", "fast") == "fast"  # Default to fast for CSV batches
+    original_name = jobs.get(job_id, {}).get("original_name", "leads")
 
     jobs[job_id] = {
         "status": "running",
@@ -231,6 +243,7 @@ def start(job_id):
         "current_url": "",
         "stats": {},
         "mode": "fast" if fast else "full",
+        "original_name": original_name,
         "started_at": datetime.now().isoformat(),
     }
 
@@ -322,12 +335,16 @@ def health():
 
 @app.route("/download/<job_id>")
 def download(job_id):
-    if job_id not in jobs or jobs[job_id]["status"] != "done":
+    if job_id not in jobs or jobs[job_id].get("status") != "done":
         return jsonify({"error": "File not ready"}), 404
+    original_name = jobs[job_id].get("original_name", "leads")
+    date_str = datetime.now().strftime("%Y-%m-%d")
+    mode = jobs[job_id].get("mode", "full")
+    download_name = f"{original_name}_enriched_{mode}_{date_str}.csv"
     return send_file(
         jobs[job_id]["output_path"],
         as_attachment=True,
-        download_name=f"enriched_leads_{job_id}.csv",
+        download_name=download_name,
     )
 
 
