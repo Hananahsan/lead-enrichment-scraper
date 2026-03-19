@@ -88,14 +88,38 @@ _BROWSER_USER_AGENTS = [
 
 
 def _get_headers():
-    """Get request headers with a random User-Agent."""
-    return {
-        "User-Agent": random.choice(_USER_AGENTS),
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    """Get request headers with a random User-Agent + stealth browser fingerprint headers."""
+    ua = random.choice(_USER_AGENTS)
+    is_chrome = "Chrome/" in ua
+    is_firefox = "Firefox/" in ua
+    headers = {
+        "User-Agent": ua,
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
+        "Upgrade-Insecure-Requests": "1",
+        "Cache-Control": "max-age=0",
     }
+    # Chrome-specific Sec- headers that WAFs check for
+    if is_chrome:
+        headers.update({
+            "Sec-CH-UA": '"Chromium";v="122", "Google Chrome";v="122", "Not(A:Brand";v="24"',
+            "Sec-CH-UA-Mobile": "?0",
+            "Sec-CH-UA-Platform": '"macOS"' if "Macintosh" in ua else '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        })
+    elif is_firefox:
+        headers.update({
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        })
+    return headers
 
 
 # Keep a static copy for session default
@@ -276,15 +300,22 @@ BOOKING_TOOLS = {
 }
 
 
-def fetch_page_simple(url, timeout=TIMEOUT):
-    """Fetch a page with requests (no JS). Uses retry + rotating UA."""
+def fetch_page_simple(url, timeout=TIMEOUT, browser_fallback=True):
+    """Fetch a page with requests (no JS). Uses retry + rotating UA.
+    On 403, falls back to Playwright headless browser to bypass bot detection."""
     try:
         resp = _retry_request(_http_session.get, url, timeout=timeout, allow_redirects=True)
         if resp is None:
             return None, None
+        # On 403, try Playwright fallback (Cloudflare/Sucuri JS challenges)
+        if resp.status_code == 403 and browser_fallback and HAS_PLAYWRIGHT:
+            return fetch_page_browser(url)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         return resp, soup
+    except requests.exceptions.HTTPError as e:
+        # If raise_for_status threw on a non-403 error, still return None
+        return None, None
     except Exception:
         return None, None
 
@@ -303,11 +334,11 @@ class BrowserResult:
 def fetch_page_browser(url, timeout=30000):
     """Fetch a page with headless Chromium (renders JS). Uses browser pool for reuse."""
     if not HAS_PLAYWRIGHT:
-        return fetch_page_simple(url)
+        return fetch_page_simple(url, browser_fallback=False)
 
     browser = _browser_pool.acquire(timeout=30)
     if not browser:
-        return fetch_page_simple(url)
+        return fetch_page_simple(url, browser_fallback=False)
 
     context = None
     try:
@@ -320,9 +351,18 @@ def fetch_page_browser(url, timeout=30000):
         start = time.time()
         resp = page.goto(url, wait_until="networkidle", timeout=timeout)
         page.wait_for_timeout(2000)
-        elapsed = time.time() - start
 
+        # Handle Cloudflare/bot challenge pages — wait for redirect
         content = page.content()
+        if any(sig in content.lower() for sig in ["just a moment", "checking your browser", "cf-challenge", "turnstile"]):
+            try:
+                page.wait_for_url("**", timeout=10000)  # Wait for challenge redirect
+                page.wait_for_timeout(3000)
+                content = page.content()
+            except Exception:
+                pass
+
+        elapsed = time.time() - start
         final_url = page.url
         status = resp.status if resp else 200
         headers = {}
@@ -349,7 +389,7 @@ def fetch_page_browser(url, timeout=30000):
         soup = BeautifulSoup(content, "html.parser")
         return result, soup
     except Exception:
-        return fetch_page_simple(url)
+        return fetch_page_simple(url, browser_fallback=False)
     finally:
         try:
             if context:
