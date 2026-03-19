@@ -300,21 +300,91 @@ BOOKING_TOOLS = {
 }
 
 
+def _fetch_via_browser_subprocess(url):
+    """Fetch a page via Playwright in a subprocess — avoids greenlet cross-thread issues.
+    Returns (BrowserResult, soup) or (None, None)."""
+    result = _run_playwright_task("_browser_fetch_page", url)
+    if result and result.get("html"):
+        br = BrowserResult(
+            url=result.get("final_url", url),
+            content=result["html"],
+            status_code=result.get("status", 200),
+            elapsed_seconds=result.get("elapsed", 0),
+        )
+        soup = BeautifulSoup(result["html"], "html.parser")
+        return br, soup
+    return None, None
+
+
+def _browser_fetch_page(url):
+    """Standalone Playwright fetch for use in subprocess. Returns dict with html/status/url."""
+    if not HAS_PLAYWRIGHT:
+        return None
+    pw = None
+    browser = None
+    context = None
+    try:
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(
+            viewport={"width": 390, "height": 844},
+            user_agent=random.choice(_BROWSER_USER_AGENTS),
+        )
+        page = context.new_page()
+        start = time.time()
+        resp = page.goto(url, wait_until="networkidle", timeout=30000)
+        page.wait_for_timeout(2000)
+
+        content = page.content()
+        # Handle Cloudflare challenge
+        if any(sig in content.lower() for sig in ["just a moment", "checking your browser", "cf-challenge", "turnstile"]):
+            try:
+                page.wait_for_url("**", timeout=10000)
+                page.wait_for_timeout(3000)
+                content = page.content()
+            except Exception:
+                pass
+
+        return {
+            "html": content,
+            "final_url": page.url,
+            "status": resp.status if resp else 200,
+            "elapsed": round(time.time() - start, 2),
+        }
+    except Exception:
+        return None
+    finally:
+        try:
+            if context:
+                context.close()
+        except Exception:
+            pass
+        try:
+            if browser:
+                browser.close()
+        except Exception:
+            pass
+        try:
+            if pw:
+                pw.stop()
+        except Exception:
+            pass
+
+
 def fetch_page_simple(url, timeout=TIMEOUT, browser_fallback=True):
     """Fetch a page with requests (no JS). Uses retry + rotating UA.
-    On 403, falls back to Playwright headless browser to bypass bot detection."""
+    On 403, falls back to Playwright in a subprocess to bypass bot detection."""
     try:
         resp = _retry_request(_http_session.get, url, timeout=timeout, allow_redirects=True)
         if resp is None:
             return None, None
-        # On 403, try Playwright fallback (Cloudflare/Sucuri JS challenges)
+        # On 403, try Playwright fallback via subprocess (avoids greenlet/thread issues)
         if resp.status_code == 403 and browser_fallback and HAS_PLAYWRIGHT:
-            return fetch_page_browser(url)
+            return _fetch_via_browser_subprocess(url)
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         return resp, soup
-    except requests.exceptions.HTTPError as e:
-        # If raise_for_status threw on a non-403 error, still return None
+    except requests.exceptions.HTTPError:
         return None, None
     except Exception:
         return None, None
@@ -2868,6 +2938,17 @@ def generate_ai_analysis(intel):
         "overall_score": "",
     }
 
+    # Skip AI call if site already has full automation platform (anti-signal = definitely not ICP)
+    if intel.get("antisignal_has_full_automation_platform"):
+        platform = intel.get("antisignal_automation_platform_name", "unknown platform")
+        data["classification"] = f"D) ALREADY HAS FULL PLATFORM — uses {platform}, no need for booking infrastructure"
+        data["icp_fit"] = "NO"
+        data["audit_summary"] = f"This business already uses {platform} as their automation platform. They have existing booking/funnel infrastructure and are not a fit for KairosCal."
+        data["positioning_gaps"] = "N/A — already has full automation platform"
+        data["outreach_hooks"] = ""
+        data["overall_score"] = "2/10 — Not ICP. Already has full automation platform."
+        return data
+
     if not HAS_CLAUDE or not ANTHROPIC_API_KEY:
         data["audit_summary"] = "Claude API key not configured (set ANTHROPIC_API_KEY env var)"
         return data
@@ -2979,8 +3060,8 @@ State the score and ONE sentence justifying it by referencing the specific data 
     try:
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
-            model="claude-sonnet-4-20250514",
-            max_tokens=1000,
+            model="claude-haiku-4-5-20251001",
+            max_tokens=600,
             messages=[{"role": "user", "content": prompt}],
         )
         response_text = message.content[0].text
