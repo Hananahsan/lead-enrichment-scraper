@@ -912,9 +912,11 @@ def analyze_offer(soup, text, html, subpages, base_url):
         data["price_points"] = list(set(prices))[:10]
         amounts = []
         for p in prices:
-            num = re.search(r"[\d,]+", p)
+            num = re.search(r"\d[\d,]*", p)
             if num:
-                amounts.append(int(num.group().replace(",", "")))
+                cleaned = num.group().replace(",", "")
+                if cleaned:
+                    amounts.append(int(cleaned))
         if amounts:
             max_price = max(amounts)
             if max_price >= 2000:
@@ -2431,9 +2433,11 @@ def crawl_site(base_url, soup, max_pages=MAX_CRAWL_PAGES):
     unique_prices = list(set(all_prices))
     price_amounts = []
     for p in unique_prices:
-        num = re.search(r"[\d,]+", p)
+        num = re.search(r"\d[\d,]*", p)
         if num:
-            price_amounts.append(int(num.group().replace(",", "")))
+            cleaned = num.group().replace(",", "")
+            if cleaned:
+                price_amounts.append(int(cleaned))
 
     price_range = "Not visible"
     if price_amounts:
