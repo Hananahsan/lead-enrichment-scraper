@@ -2938,17 +2938,6 @@ def generate_ai_analysis(intel):
         "overall_score": "",
     }
 
-    # Skip AI call if site already has full automation platform (anti-signal = definitely not ICP)
-    if intel.get("antisignal_has_full_automation_platform"):
-        platform = intel.get("antisignal_automation_platform_name", "unknown platform")
-        data["classification"] = f"D) ALREADY HAS FULL PLATFORM — uses {platform}, no need for booking infrastructure"
-        data["icp_fit"] = "NO"
-        data["audit_summary"] = f"This business already uses {platform} as their automation platform. They have existing booking/funnel infrastructure and are not a fit for KairosCal."
-        data["positioning_gaps"] = "N/A — already has full automation platform"
-        data["outreach_hooks"] = ""
-        data["overall_score"] = "2/10 — Not ICP. Already has full automation platform."
-        return data
-
     if not HAS_CLAUDE or not ANTHROPIC_API_KEY:
         data["audit_summary"] = "Claude API key not configured (set ANTHROPIC_API_KEY env var)"
         return data
