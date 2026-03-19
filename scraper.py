@@ -13,6 +13,7 @@ import json
 import os
 import random
 import re
+import subprocess
 import sys
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -106,6 +107,36 @@ def _random_delay(min_s=0.5, max_s=2.0):
     time.sleep(random.uniform(min_s, max_s))
 
 
+def _run_playwright_task(func_name, *args):
+    """Run a Playwright-dependent function in a subprocess to avoid greenlet/thread issues.
+
+    Playwright's sync API binds to the thread+event loop where it's created, which
+    breaks when called from ThreadPoolExecutor workers. Running in a subprocess gives
+    each call a clean process with its own event loop. Concurrency is limited to 4
+    to avoid overwhelming the system with too many browser processes.
+    """
+    script = f"""
+import json, sys
+sys.path.insert(0, {json.dumps(str(Path(__file__).resolve().parent))})
+from scraper import {func_name}
+args = json.loads(sys.argv[1])
+result = {func_name}(*args)
+print(json.dumps(result, default=str))
+"""
+    with _playwright_semaphore:
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c", script, json.dumps(args)],
+                capture_output=True, text=True, timeout=90,
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            )
+            if proc.returncode == 0 and proc.stdout.strip():
+                return json.loads(proc.stdout.strip())
+        except (subprocess.TimeoutExpired, json.JSONDecodeError, Exception):
+            pass
+    return None
+
+
 def _retry_request(method, url, max_retries=2, **kwargs):
     """Make an HTTP request with retry + exponential backoff on 403/429/5xx."""
     kwargs.setdefault("timeout", TIMEOUT)
@@ -143,6 +174,8 @@ ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 import atexit
 import queue
 import threading
+
+_playwright_semaphore = threading.Semaphore(4)  # Max 4 concurrent Playwright subprocesses
 
 class BrowserPool:
     """Pool of reusable Playwright browser instances for concurrent scraping.
@@ -2493,11 +2526,24 @@ def check_facebook_ads(url):
                 browser = pw.chromium.launch(headless=True)
                 context = browser.new_context(user_agent=random.choice(_USER_AGENTS))
                 page = context.new_page()
-                page.goto(ad_library_url, wait_until="domcontentloaded", timeout=20000)
-                page.wait_for_timeout(5000)
+                page.goto(ad_library_url, wait_until="domcontentloaded", timeout=30000)
+                # Facebook Ad Library does client-side navigation after load;
+                # wait for network idle then extract content with retries
+                try:
+                    page.wait_for_load_state("networkidle", timeout=15000)
+                except Exception:
+                    pass
+                page.wait_for_timeout(3000)
 
-                content = page.content()
-                page_text = page.inner_text("body") if page.query_selector("body") else ""
+                # Retry content extraction — page may still be navigating
+                page_text = ""
+                for _attempt in range(3):
+                    try:
+                        page_text = page.inner_text("body") if page.query_selector("body") else ""
+                        if page_text:
+                            break
+                    except Exception:
+                        page.wait_for_timeout(2000)
 
                 results_match = re.search(r"(\d+)\s*results?", page_text, re.I)
                 no_results = re.search(r"no\s*results|didn.?t\s*find|0\s*results", page_text, re.I)
@@ -2514,25 +2560,35 @@ def check_facebook_ads(url):
                     else:
                         data["fb_ads_status"] = "No active ads found"
                 else:
-                    ad_cards = page.query_selector_all('[class*="ad"], [data-testid*="ad"]')
-                    if ad_cards and len(ad_cards) > 0:
-                        data["fb_ads_found"] = True
-                        data["fb_ads_count"] = len(ad_cards)
-                        data["fb_ads_status"] = f"~{len(ad_cards)} ad(s) detected"
-                    else:
+                    try:
+                        ad_cards = page.query_selector_all('[class*="ad"], [data-testid*="ad"]')
+                        if ad_cards and len(ad_cards) > 0:
+                            data["fb_ads_found"] = True
+                            data["fb_ads_count"] = len(ad_cards)
+                            data["fb_ads_status"] = f"~{len(ad_cards)} ad(s) detected"
+                        else:
+                            data["fb_ads_status"] = "Could not determine (page structure changed)"
+                    except Exception:
                         data["fb_ads_status"] = "Could not determine (page structure changed)"
 
                 if data["fb_ads_found"]:
-                    ad_elements = page.query_selector_all('[class*="ad-card"], [class*="_7jyr"]')
-                    for i, el in enumerate(ad_elements[:3]):
-                        try:
-                            ad_text = el.inner_text()[:200]
-                            data["fb_ads_details"].append(ad_text)
-                        except Exception:
-                            pass
+                    try:
+                        ad_elements = page.query_selector_all('[class*="ad-card"], [class*="_7jyr"]')
+                        for i, el in enumerate(ad_elements[:3]):
+                            try:
+                                ad_text = el.inner_text()[:200]
+                                data["fb_ads_details"].append(ad_text)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
 
-            except Exception:
-                data["fb_ads_status"] = "Check failed (browser error)"
+            except Exception as e:
+                err_msg = str(e)[:100]
+                if "timeout" in err_msg.lower():
+                    data["fb_ads_status"] = "Check failed (timeout)"
+                else:
+                    data["fb_ads_status"] = f"Check failed (browser error: {err_msg})"
             finally:
                 try:
                     if context:
@@ -3184,13 +3240,31 @@ def scrape_website(url, fast=False):
         return ("pagespeed", get_pagespeed_insights(url))
 
     def _run_fb_ads():
-        return ("fb_ads", check_facebook_ads(url))
+        # Run in subprocess to avoid Playwright greenlet/thread issues
+        result = _run_playwright_task("check_facebook_ads", url)
+        if result is None:
+            result = {
+                "fb_ads_found": False, "fb_ads_count": 0,
+                "fb_ads_status": "Check failed (subprocess error)",
+                "fb_ads_details": [],
+                "fb_ads_library_url": f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={urlparse(url).netloc.replace('www.', '')}&search_type=keyword_unordered",
+            }
+        return ("fb_ads", result)
 
     def _run_crawl():
         return ("crawl", crawl_site(url, soup))
 
     def _run_social():
-        return ("social", scrape_social_profiles(soup, html))
+        # Run in subprocess to avoid Playwright greenlet/thread issues
+        # Pass None for soup — function only uses html (string) for regex matching
+        result = _run_playwright_task("scrape_social_profiles", None, html)
+        if result is None:
+            result = {
+                "social_profiles": {}, "social_total_followers": 0,
+                "social_most_active_platform": "", "social_last_post_date": "",
+                "social_posting_frequency": "", "social_summary": "Check failed (subprocess error)",
+            }
+        return ("social", result)
 
     def _run_timing_network():
         return ("timing_network", analyze_timing_network(url, soup))
