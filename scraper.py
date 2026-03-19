@@ -3021,12 +3021,35 @@ def scrape_website(url, fast=False):
     intel = {"website_url": url, "scrape_mode": "fast" if fast else "full"}
 
     # Fetch homepage — skip browser in fast mode
-    if fast:
-        resp, soup = fetch_page_simple(url)
-    else:
-        resp, soup = fetch_homepage(url)
+    fetch_error = None
+    try:
+        if fast:
+            resp, soup = fetch_page_simple(url)
+        else:
+            resp, soup = fetch_homepage(url)
+    except Exception as e:
+        resp, soup = None, None
+        fetch_error = str(e)[:200]
     if not soup:
         intel["scrape_status"] = "failed"
+        if fetch_error:
+            intel["error"] = fetch_error
+        else:
+            # Try to determine why it failed
+            try:
+                test_resp = _retry_request(_http_session.get, url, max_retries=0, timeout=8, allow_redirects=True)
+                if test_resp is None:
+                    intel["error"] = "Connection failed (DNS or network error)"
+                elif test_resp.status_code == 403:
+                    intel["error"] = "403 Forbidden — site blocks automated access"
+                elif test_resp.status_code == 404:
+                    intel["error"] = "404 Not Found — page does not exist"
+                elif test_resp.status_code >= 500:
+                    intel["error"] = f"Server error ({test_resp.status_code})"
+                else:
+                    intel["error"] = f"HTTP {test_resp.status_code} — could not parse page"
+            except Exception as e2:
+                intel["error"] = f"Connection failed: {str(e2)[:150]}"
         return intel
 
     intel["scrape_status"] = "success"
