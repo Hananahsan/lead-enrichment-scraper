@@ -3014,7 +3014,7 @@ If classification is B, C, D, or E: set ICP_FIT to "NO" and skip the outreach ho
 
 If classification is A: set ICP_FIT to "YES" and proceed with full analysis.
 
-STEP 2 — Respond with EXACTLY this format (keep each section to 2-4 sentences max):
+STEP 2 — Respond with EXACTLY this format. Use PLAIN TEXT only — no markdown, no bold, no headers, no ---. Keep each section to 2-4 sentences max:
 
 CLASSIFICATION:
 [Letter) Category — one sentence reason]
@@ -3055,21 +3055,25 @@ State the score and ONE sentence justifying it by referencing the specific data 
         )
         response_text = message.content[0].text
 
-        # Parse sections
+        # Strip markdown formatting Haiku may add (**, ##, ---)
+        cleaned = re.sub(r'\*\*', '', response_text)
+        cleaned = re.sub(r'^#{1,3}\s*', '', cleaned, flags=re.M)
+        cleaned = re.sub(r'\n---+\n', '\n', cleaned)
+
+        # Parse sections — flexible label matching (optional **, #, whitespace)
         sections = {
-            "classification": r"CLASSIFICATION:\s*\n(.*?)(?=\nICP_FIT:|\Z)",
-            "icp_fit": r"ICP_FIT:\s*\n(.*?)(?=\nAUDIT SUMMARY:|\Z)",
-            "audit_summary": r"AUDIT SUMMARY:\s*\n(.*?)(?=\nPOSITIONING GAPS:|\Z)",
-            "positioning_gaps": r"POSITIONING GAPS:\s*\n(.*?)(?=\nOUTREACH HOOKS:|\Z)",
-            "outreach_hooks": r"OUTREACH HOOKS:\s*\n(.*?)(?=\nOVERALL SCORE:|\Z)",
+            "classification": r"CLASSIFICATION:\s*\n(.*?)(?=\n\s*ICP_FIT:|\Z)",
+            "icp_fit": r"ICP_FIT:\s*\n(.*?)(?=\n\s*AUDIT SUMMARY:|\Z)",
+            "audit_summary": r"AUDIT SUMMARY:\s*\n(.*?)(?=\n\s*POSITIONING GAPS:|\Z)",
+            "positioning_gaps": r"POSITIONING GAPS:\s*\n(.*?)(?=\n\s*OUTREACH HOOKS:|\Z)",
+            "outreach_hooks": r"OUTREACH HOOKS:\s*\n(.*?)(?=\n\s*OVERALL SCORE:|\Z)",
             "overall_score": r"OVERALL SCORE:\s*\n(.*?)(?:\Z)",
         }
 
         for key, pattern in sections.items():
-            match = re.search(pattern, response_text, re.S)
+            match = re.search(pattern, cleaned, re.S)
             if match:
                 value = match.group(1).strip()
-                # Clean trailing markdown separators Haiku sometimes adds
                 value = re.sub(r'\n---\s*$', '', value).strip()
                 data[key] = value
 
