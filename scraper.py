@@ -3050,7 +3050,7 @@ State the score and ONE sentence justifying it by referencing the specific data 
         client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
         message = client.messages.create(
             model="claude-haiku-4-5-20251001",
-            max_tokens=600,
+            max_tokens=800,
             messages=[{"role": "user", "content": prompt}],
         )
         response_text = message.content[0].text
@@ -3068,7 +3068,10 @@ State the score and ONE sentence justifying it by referencing the specific data 
         for key, pattern in sections.items():
             match = re.search(pattern, response_text, re.S)
             if match:
-                data[key] = match.group(1).strip()
+                value = match.group(1).strip()
+                # Clean trailing markdown separators Haiku sometimes adds
+                value = re.sub(r'\n---\s*$', '', value).strip()
+                data[key] = value
 
         # Fallback: if parsing fails, just return the full response
         if not any(data[k] for k in sections):
