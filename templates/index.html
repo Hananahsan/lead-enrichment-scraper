@@ -543,8 +543,8 @@
                 if (pollErrors >= 5) { clearInterval(pollInterval); alert('Lost connection to server. Please refresh.'); }
                 return;
             }
-            pollErrors = 0;
             if (data.error) { pollErrors++; if (pollErrors >= 5) { clearInterval(pollInterval); alert('Job not found. Please try again.'); showStep('upload'); } return; }
+            pollErrors = 0;
             const pct = data.total > 0 ? Math.round((data.current / data.total) * 100) : 0;
             $('#progress-bar').style.width = pct + '%';
             $('#progress-count').textContent = `${data.current} / ${data.total}`;
@@ -638,12 +638,12 @@
             const ctaClass = ctaWorks === 'Yes' ? 'qs-good' : ctaWorks.includes('Likely') ? 'qs-warn' : ctaWorks.includes('broken') || ctaWorks.includes('Broken') ? 'qs-bad' : '';
 
             qsC.innerHTML = `<div class="quick-stats">
-                <div class="quick-stat"><div class="qs-value ${psClass}">${psScore != null ? psScore : '-'}</div><div class="qs-label">PageSpeed</div></div>
-                <div class="quick-stat"><div class="qs-value">${bookingTool}</div><div class="qs-label">Booking Tool</div></div>
-                <div class="quick-stat"><div class="qs-value ${ctaClass}">${ctaWorks.length > 20 ? ctaWorks.substring(0,18) + '...' : ctaWorks}</div><div class="qs-label">CTA Status</div></div>
-                <div class="quick-stat"><div class="qs-value">${fbAds}</div><div class="qs-label">FB Ads</div></div>
-                <div class="quick-stat"><div class="qs-value">${typeof totalFollowers === 'number' ? totalFollowers.toLocaleString() : totalFollowers}</div><div class="qs-label">Followers</div></div>
-                <div class="quick-stat"><div class="qs-value">${pagesScraped}</div><div class="qs-label">Pages Crawled</div></div>
+                <div class="quick-stat"><div class="qs-value ${psClass}">${psScore != null ? esc(psScore) : '-'}</div><div class="qs-label">PageSpeed</div></div>
+                <div class="quick-stat"><div class="qs-value">${esc(bookingTool)}</div><div class="qs-label">Booking Tool</div></div>
+                <div class="quick-stat"><div class="qs-value ${ctaClass}">${esc(ctaWorks.length > 20 ? ctaWorks.substring(0,18) + '...' : ctaWorks)}</div><div class="qs-label">CTA Status</div></div>
+                <div class="quick-stat"><div class="qs-value">${esc(fbAds)}</div><div class="qs-label">FB Ads</div></div>
+                <div class="quick-stat"><div class="qs-value">${typeof totalFollowers === 'number' ? esc(totalFollowers.toLocaleString()) : esc(totalFollowers)}</div><div class="qs-label">Followers</div></div>
+                <div class="quick-stat"><div class="qs-value">${esc(pagesScraped)}</div><div class="qs-label">Pages Crawled</div></div>
             </div>`;
 
             // === AI SECTION ===
@@ -742,7 +742,7 @@
                     d = value.length === 0 ? 'None' : typeof value[0] === 'object' ? value.map(v => v.text || v.url || JSON.stringify(v)).join(', ') : value.join(', ');
                 } else if (key === '_confidence' && typeof value === 'object') {
                     d = Object.entries(value).map(([k, v]) => { const s = String(v || ''); return `<span class="conf-badge conf-${s.toLowerCase()}">${esc(k)}: ${esc(s)}</span>`; }).join(' ');
-                    return { d, cls };
+                    return { d, cls, isHtml: true };
                 } else if (typeof value === 'object' && value !== null) {
                     d = JSON.stringify(value);
                 } else if (typeof value === 'boolean') {
@@ -754,8 +754,9 @@
                 if (typeof d === 'string' && /^https?:\/\//.test(d)) {
                     const short = d.length > 50 ? d.substring(0, 48) + '...' : d;
                     d = `<a href="${safeUrl(d)}" target="_blank" rel="noopener">${esc(short)}</a>`;
+                    return { d, cls, isHtml: true };
                 }
-                return { d, cls };
+                return { d, cls, isHtml: false };
             }
 
             // Build categories
@@ -769,8 +770,8 @@
                     const val = results[key];
                     if (val === undefined || val === null || val === '') continue;
                     rowCount++;
-                    const { d, cls } = fmtVal(key, val);
-                    const safeD = typeof d === 'string' && d.includes('<a ') ? d : esc(d);
+                    const { d, cls, isHtml } = fmtVal(key, val);
+                    const safeD = isHtml ? d : esc(d);
                     bodyHtml.push(`<div class="result-row"><span class="result-key">${esc(label)}</span><span class="result-value ${cls}">${safeD}</span></div>`);
                 }
                 if (rowCount === 0) return null;
