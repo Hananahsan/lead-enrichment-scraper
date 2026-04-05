@@ -115,7 +115,7 @@ def _track_job_usage(job_id, results_dict, mode):
 
     # Calculate batch savings (batch costs 50% of realtime)
     is_batch = "batch" in str(mode)
-    batch_savings = job_cost if is_batch else 0.0  # Saved same amount as spent
+    batch_savings = job_cost if is_batch else 0.0  # Batch is 50% off, so we paid X and saved X
 
     with _usage_lock:
         _usage["total_tokens_in"] += job_tokens_in
@@ -377,33 +377,53 @@ def run_scrape_job_batch(job_id, input_path, fast=False):
         # ---- Phase 3: Poll each batch until complete ----
         def _on_poll(b):
             with _jobs_lock:
+                if job_id not in jobs:
+                    return
                 counts = b.request_counts
                 jobs[job_id]["batch_succeeded"] = counts.succeeded
                 jobs[job_id]["batch_errored"] = counts.errored
                 jobs[job_id]["batch_processing"] = counts.processing
                 jobs[job_id]["batch_expired"] = counts.expired
 
+        timed_out_batches = set()
         for batch_obj in batches:
+            if jobs.get(job_id, {}).get("cancelled"):
+                break
             try:
                 poll_batch(batch_obj.id, callback=_on_poll, poll_interval=15)
             except TimeoutError:
-                _update_job(job_id, batch_phase="timeout", status="error",
-                            error=f"Batch {batch_obj.id} timed out")
-                # Still try to retrieve partial results below
+                timed_out_batches.add(batch_obj.id)
+                import logging as _logging
+                _logging.getLogger("claygent").warning(
+                    f"Batch {batch_obj.id} timed out — will attempt partial retrieval"
+                )
 
         # ---- Phase 4: Retrieve results from all batches and merge ----
-        _update_job(job_id, batch_phase="merging")
+        if timed_out_batches and len(timed_out_batches) == len(batches):
+            _update_job(job_id, batch_phase="timeout", status="error",
+                        error="All batches timed out")
+        else:
+            if timed_out_batches:
+                _update_job(job_id, batch_phase="merging",
+                            batch_timeouts=list(timed_out_batches))
+            else:
+                _update_job(job_id, batch_phase="merging")
 
         ai_results_map = {}
+        retrieval_errors = []
         for batch_obj in batches:
             try:
                 batch_results = retrieve_batch_results(batch_obj.id)
                 ai_results_map.update(batch_results)
             except Exception as e:
+                retrieval_errors.append(f"{batch_obj.id}: {e}")
                 import logging as _logging
                 _logging.getLogger("claygent").error(
                     f"Failed to retrieve results for batch {batch_obj.id}: {e}"
                 )
+
+        if retrieval_errors:
+            _update_job(job_id, retrieval_errors=retrieval_errors)
 
         for custom_id, ai_result in ai_results_map.items():
             idx = batch_idx_map.get(custom_id)
@@ -411,7 +431,10 @@ def run_scrape_job_batch(job_id, input_path, fast=False):
                 continue
             intel = intel_cache.get(idx, {})
             content_data = content_cache.get(idx)
-            apply_batch_results_to_intel(intel, ai_result, content_data)
+            if content_data is not None:
+                apply_batch_results_to_intel(intel, ai_result, content_data)
+            else:
+                apply_batch_results_to_intel(intel, ai_result, {})
             intel_cache[idx] = intel
 
         # Build final results (including leads that had no batch request)
@@ -698,6 +721,7 @@ def start(job_id):
         "mode": mode,
         "original_name": original_name,
         "started_at": datetime.now().isoformat(),
+        "batch_phase": None,
     }
 
     if use_batch and HAS_BATCH:

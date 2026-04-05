@@ -661,16 +661,17 @@
                 const url = data.current_url || '';
                 $('#current-url').textContent = data.batch_phase === 'scraping' && url ? `${phaseText} · ${url}` : phaseText;
             }
-            $('#stat-success').textContent = data.stats.success || 0;
-            $('#stat-failed').textContent = data.stats.failed || 0;
-            $('#stat-skipped').textContent = data.stats.no_url || 0;
+            const stats = data.stats || {};
+            $('#stat-success').textContent = stats.success || 0;
+            $('#stat-failed').textContent = stats.failed || 0;
+            $('#stat-skipped').textContent = stats.no_url || 0;
             if (data.status === 'done') {
                 clearInterval(pollInterval);
                 refreshUsage(); // Final refresh
                 if (usageInterval) { clearInterval(usageInterval); usageInterval = setInterval(refreshUsage, 30000); }
-                $('#done-success').textContent = data.stats.success || 0;
-                $('#done-failed').textContent = data.stats.failed || 0;
-                $('#done-skipped').textContent = data.stats.no_url || 0;
+                $('#done-success').textContent = stats.success || 0;
+                $('#done-failed').textContent = stats.failed || 0;
+                $('#done-skipped').textContent = stats.no_url || 0;
                 $('#done-summary').textContent = `${data.stats.success || 0} of ${data.total || 0} leads enriched.`;
                 $('#download-btn').href = `/download/${currentJobId}`;
 

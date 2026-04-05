@@ -1437,11 +1437,11 @@ def submit_batch(requests_list):
 
     if anthropic is None or not ANTHROPIC_API_KEY:
         logger.error("Cannot submit batch: anthropic SDK or API key not available")
-        return None
+        return []
 
     if not requests_list:
         logger.warning("Empty requests list — nothing to batch")
-        return None
+        return []
 
     from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
     from anthropic.types.messages.batch_create_params import Request
@@ -1483,7 +1483,7 @@ def submit_batch(requests_list):
             )
         except Exception as e:
             logger.error(f"Batch submission failed: {e}")
-    return batches if batches else None
+    return batches
 
 
 def poll_batch(batch_id, callback=None, poll_interval=15, max_wait_seconds=86400):
@@ -1502,6 +1502,9 @@ def poll_batch(batch_id, callback=None, poll_interval=15, max_wait_seconds=86400
         TimeoutError: if polling exceeds max_wait_seconds
     """
     from scraper import ANTHROPIC_API_KEY
+
+    if anthropic is None or not ANTHROPIC_API_KEY:
+        raise RuntimeError("anthropic SDK or API key not available for polling")
 
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     start_time = time.time()
@@ -1544,6 +1547,9 @@ def retrieve_batch_results(batch_id):
     """
     from scraper import ANTHROPIC_API_KEY
 
+    if anthropic is None or not ANTHROPIC_API_KEY:
+        raise RuntimeError("anthropic SDK or API key not available for retrieval")
+
     client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
     results = {}
 
@@ -1552,9 +1558,16 @@ def retrieve_batch_results(batch_id):
 
         if result.result.type == "succeeded":
             message = result.result.message
-            response_text = message.content[0].text
-            tokens_in = message.usage.input_tokens
-            tokens_out = message.usage.output_tokens
+            if not message.content:
+                results[custom_id] = {
+                    "ai_parse_error": True,
+                    "ai_error": "Empty response from batch API",
+                    "ai_batch_mode": True,
+                }
+                continue
+            response_text = message.content[0].text if hasattr(message.content[0], "text") else str(message.content[0])
+            tokens_in = getattr(message.usage, "input_tokens", 0)
+            tokens_out = getattr(message.usage, "output_tokens", 0)
 
             ai_result = {
                 "ai_raw": response_text,
@@ -1660,11 +1673,13 @@ def apply_batch_results_to_intel(intel, ai_results, content_data):
     intel["ai_icp_fit"] = intel.get("icp_fit", "")
     intel["ai_audit_summary"] = intel.get("audit_summary", "")
     intel["ai_positioning_gaps"] = intel.get("positioning_gaps", "")
-    intel["ai_outreach_hooks"] = intel.get("observation_hook", "")
+    intel["ai_outreach_hooks"] = intel.get("observation_hook") or ""
     if intel.get("secondary_observations"):
         secondary = intel["secondary_observations"]
         if isinstance(secondary, list):
-            intel["ai_outreach_hooks"] += " | " + " | ".join(str(s) for s in secondary)
+            hooks = intel["ai_outreach_hooks"]
+            joined = " | ".join(str(s) for s in secondary if s)
+            intel["ai_outreach_hooks"] = (hooks + " | " + joined) if hooks else joined
     numeric = intel.get("icp_score_numeric", 0)
     if isinstance(numeric, (int, float)):
         intel["ai_overall_score"] = f"{round(numeric / 10, 1)}/10"
