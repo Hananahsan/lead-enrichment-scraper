@@ -5,7 +5,7 @@ tldextract
 flask
 gunicorn
 playwright
-anthropic
+anthropic>=0.42.0
 python-whois
 feedparser
 python-dateutil

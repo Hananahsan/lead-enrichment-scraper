@@ -767,7 +767,11 @@ def _check_claude_health():
         try:
             import anthropic
             client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-            client.models.list(limit=1)
+            client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=1,
+                messages=[{"role": "user", "content": "hi"}],
+            )
             detail = "Connected and working"
         except Exception as e:
             err = str(e)
