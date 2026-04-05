@@ -311,9 +311,28 @@
         .health-chip.ok .dot { background: #4ade80; }
         .health-chip.fail .dot { background: #f87171; }
 
+        .usage-bar { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 20px; padding: 10px 16px; background: #111113; border: 1px solid #1e1e22; border-radius: 10px; align-items: center; font-size: 12px; }
+        .usage-bar .usage-title { font-size: 11px; font-weight: 600; color: #52525b; text-transform: uppercase; letter-spacing: 0.5px; }
+        .usage-stat { display: flex; align-items: center; gap: 4px; }
+        .usage-stat .usage-label { color: #52525b; }
+        .usage-stat .usage-value { color: #d4d4d8; font-weight: 600; font-variant-numeric: tabular-nums; }
+        .usage-stat .usage-value.cost { color: #f59e0b; }
+        .usage-stat .usage-value.savings { color: #4ade80; }
+
         /* Smooth content transition */
         .result-category-body { animation: fadeIn 0.15s ease; }
         @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+        /* Mode labels */
+        .mode-label { display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; border: 1px solid #27272a; background: transparent; color: #71717a; transition: all 0.15s; }
+        .mode-label.active { border-color: #3b82f6; background: #0c1929; color: #3b82f6; }
+
+        /* Claygent specific styles */
+        .claygent-badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.3px; }
+        .claygent-green { background: #052e16; color: #4ade80; }
+        .claygent-yellow { background: #422006; color: #facc15; }
+        .claygent-red { background: #450a0a; color: #f87171; }
+        .campaign-bucket { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 6px; font-size: 12px; font-weight: 800; background: #1e293b; color: #93c5fd; border: 1px solid #334155; }
 
         /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -332,6 +351,15 @@
         <div class="health-bar" id="health-bar">
             <span class="health-title">Services:</span>
             <span class="health-chip" style="background:#18181b; color:#3f3f46;">Checking...</span>
+        </div>
+
+        <div class="usage-bar" id="usage-bar">
+            <span class="usage-title">Session Usage</span>
+            <div class="usage-stat"><span class="usage-label">Cost:</span><span class="usage-value cost" id="usage-cost">$0.00</span></div>
+            <div class="usage-stat"><span class="usage-label">Tokens:</span><span class="usage-value" id="usage-tokens">0</span></div>
+            <div class="usage-stat"><span class="usage-label">Leads:</span><span class="usage-value" id="usage-leads">0</span></div>
+            <div class="usage-stat"><span class="usage-label">Jobs:</span><span class="usage-value" id="usage-jobs">0</span></div>
+            <div class="usage-stat" id="usage-savings-wrap" style="display:none;"><span class="usage-label">Batch Savings:</span><span class="usage-value savings" id="usage-savings">$0.00</span></div>
         </div>
 
         <!-- Step 1: Upload -->
@@ -357,6 +385,12 @@
                     <label>Enter a website URL to scrape</label>
                     <div class="url-input-row">
                         <input type="text" id="urlInput" placeholder="https://example.com" />
+                        <select id="url-mode-select" style="padding:10px 12px; border-radius:9px; border:1px solid #27272a; background:#18181b; color:#d4d4d8; font-size:13px; cursor:pointer;">
+                            <option value="full">Full + AI</option>
+                            <option value="fast">Fast + AI</option>
+                            <option value="no-ai">Full (no AI)</option>
+                            <option value="fast-no-ai">Fast (no AI)</option>
+                        </select>
                         <button class="btn btn-primary" id="scrape-url-btn">Scrape</button>
                     </div>
                 </div>
@@ -401,15 +435,27 @@
                 <div class="table-wrap">
                     <table id="preview-table"><thead><tr id="preview-header"></tr></thead><tbody id="preview-body"></tbody></table>
                 </div>
-                <div class="mode-toggle" style="margin: 18px 0 8px; display: flex; align-items: center; gap: 12px;">
+                <div class="mode-toggle" style="margin: 18px 0 8px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
                     <span style="color: #a1a1aa; font-size: 13px; font-weight: 600;">Mode:</span>
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #3b82f6; background: #0c1929; color: #3b82f6;" id="mode-fast-label">
-                        <input type="radio" name="scrape-mode" value="fast" checked style="accent-color: #3b82f6;"> Fast
+                    <label class="mode-label active" id="mode-fast-label">
+                        <input type="radio" name="scrape-mode" value="fast" checked style="accent-color: #3b82f6;"> Fast + AI
                     </label>
-                    <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; border: 1px solid #27272a; background: transparent; color: #71717a;" id="mode-full-label">
-                        <input type="radio" name="scrape-mode" value="full" style="accent-color: #3b82f6;"> Full
+                    <label class="mode-label" id="mode-full-label">
+                        <input type="radio" name="scrape-mode" value="full" style="accent-color: #3b82f6;"> Full + AI
                     </label>
-                    <span style="color: #52525b; font-size: 12px;" id="mode-desc">20 parallel workers · skips Playwright, FB ads, social, crawl · ~8-12s/site</span>
+                    <label class="mode-label" id="mode-fast-noai-label">
+                        <input type="radio" name="scrape-mode" value="fast-no-ai" style="accent-color: #3b82f6;"> Fast (no AI)
+                    </label>
+                    <label class="mode-label" id="mode-noai-label">
+                        <input type="radio" name="scrape-mode" value="no-ai" style="accent-color: #3b82f6;"> Full (no AI)
+                    </label>
+                    <label class="mode-label" id="mode-batch-label" style="border-color: #22c55e;">
+                        <input type="radio" name="scrape-mode" value="batch" style="accent-color: #22c55e;"> Batch AI <span style="color:#22c55e; font-size:10px; font-weight:700;">50% OFF</span>
+                    </label>
+                    <label class="mode-label" id="mode-batch-fast-label" style="border-color: #22c55e;">
+                        <input type="radio" name="scrape-mode" value="batch-fast" style="accent-color: #22c55e;"> Batch Fast <span style="color:#22c55e; font-size:10px; font-weight:700;">50% OFF</span>
+                    </label>
+                    <span style="color: #52525b; font-size: 12px; flex-basis: 100%; margin-top: 4px;" id="mode-desc">Fast + Claygent AI (Sonnet) · homepage only · ~8-12s/site</span>
                 </div>
                 <div class="btn-row">
                     <button class="btn btn-primary" id="start-btn">Start Enrichment</button>
@@ -440,13 +486,63 @@
             <div class="card">
                 <div class="done-icon"><svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg></div>
                 <div class="done-text"><h2>Enrichment Complete</h2><p id="done-summary"></p></div>
-                <div class="stats-grid">
+
+                <!-- ICP Breakdown -->
+                <div class="stats-grid" id="icp-breakdown" style="grid-template-columns: repeat(4, 1fr); margin-bottom: 16px; display:none;">
+                    <div class="stat-card success"><div class="number" id="done-green">0</div><div class="label">GREEN</div></div>
+                    <div class="stat-card" style="background:#422006;"><div class="number" style="color:#facc15;" id="done-yellow">0</div><div class="label">YELLOW</div></div>
+                    <div class="stat-card failed"><div class="number" id="done-red">0</div><div class="label">RED</div></div>
+                    <div class="stat-card"><div class="number" id="done-unknown">0</div><div class="label">Unknown</div></div>
+                </div>
+
+                <!-- Scrape Stats -->
+                <div class="stats-grid" style="margin-bottom: 16px;">
                     <div class="stat-card success"><div class="number" id="done-success">0</div><div class="label">Scraped</div></div>
                     <div class="stat-card failed"><div class="number" id="done-failed">0</div><div class="label">Failed</div></div>
                     <div class="stat-card skipped"><div class="number" id="done-skipped">0</div><div class="label">No URL</div></div>
                 </div>
-                <div class="btn-row" style="justify-content: center;">
+
+                <!-- Quality Details (expandable) -->
+                <div id="quality-details" class="hidden" style="margin-bottom: 16px;">
+                    <div id="quality-campaigns" class="hidden" style="background:#111113; border:1px solid #1e1e22; border-radius:10px; padding:16px; margin-bottom:10px;">
+                        <h3 style="font-size:13px; color:#93c5fd; margin-bottom:10px;">Campaign Distribution</h3>
+                        <div id="quality-campaign-bars"></div>
+                    </div>
+                    <div id="quality-conflicts" class="hidden" style="background:#111113; border:1px solid #1e1e22; border-radius:10px; padding:16px; margin-bottom:10px;">
+                        <h3 style="font-size:13px; color:#f87171; margin-bottom:10px;">AI vs Regex Conflicts <span id="conflict-count" style="color:#52525b; font-weight:400;"></span></h3>
+                        <div id="quality-conflict-list" style="font-size:12px; color:#a1a1aa; max-height:200px; overflow-y:auto;"></div>
+                    </div>
+                    <div id="quality-false-neg" class="hidden" style="background:#111113; border:1px solid #1e1e22; border-radius:10px; padding:16px; margin-bottom:10px;">
+                        <h3 style="font-size:13px; color:#facc15; margin-bottom:10px;">Booking False Negative Risk <span id="false-neg-count" style="color:#52525b; font-weight:400;"></span></h3>
+                        <div id="quality-false-neg-list" style="font-size:12px; color:#a1a1aa; max-height:150px; overflow-y:auto;"></div>
+                    </div>
+                    <div id="quality-claygent" class="hidden" style="background:#111113; border:1px solid #1e1e22; border-radius:10px; padding:16px; margin-bottom:10px;">
+                        <h3 style="font-size:13px; color:#3b82f6; margin-bottom:10px;">Claygent AI Stats</h3>
+                        <div id="quality-claygent-stats" style="font-size:12px; color:#a1a1aa;"></div>
+                    </div>
+                    <div id="quality-usage" class="hidden" style="background:#111113; border:1px solid #1e1e22; border-radius:10px; padding:16px; margin-bottom:10px;">
+                        <h3 style="font-size:13px; color:#f59e0b; margin-bottom:10px;">Job Usage</h3>
+                        <div id="quality-usage-stats" style="font-size:12px; color:#a1a1aa;"></div>
+                    </div>
+                    <div id="quality-green-leads" class="hidden" style="background:#111113; border:1px solid #1e1e22; border-radius:10px; padding:16px;">
+                        <h3 style="font-size:13px; color:#4ade80; margin-bottom:10px;">GREEN Leads Ready for Outreach</h3>
+                        <div class="table-wrap" style="max-height:300px; overflow-y:auto;">
+                            <table id="green-leads-table"><thead><tr>
+                                <th>URL</th><th>Campaign</th><th>Build Size</th><th>Score</th>
+                            </tr></thead><tbody id="green-leads-body"></tbody></table>
+                        </div>
+                    </div>
+                </div>
+
+                <div style="text-align:center; margin-bottom:16px;">
+                    <button class="btn btn-outline btn-sm" id="toggle-quality-btn" style="display:none;">Show Quality Details</button>
+                </div>
+
+                <!-- Download Buttons -->
+                <div class="btn-row" style="justify-content: center; flex-wrap: wrap;">
                     <a class="btn btn-success" id="download-btn">Download Enriched CSV</a>
+                    <a class="btn btn-primary" id="download-briefs-btn" style="display:none;">Download Outreach Briefs</a>
+                    <a class="btn btn-outline" id="download-instantly-btn" style="display:none;">Download Instantly Import</a>
                     <button class="btn btn-outline" id="new-btn">Start New Enrichment</button>
                 </div>
             </div>
@@ -512,12 +608,19 @@
         }
 
         // Mode toggle styling
+        const modeDescs = {
+            'fast': 'Fast + Claygent AI (Sonnet) · homepage only · ~8-12s/site',
+            'full': 'Full crawl + Playwright + Claygent AI (Sonnet) · ~15-25s/site',
+            'fast-no-ai': 'Fast · regex only · zero API cost · ~5-8s/site',
+            'no-ai': 'Full crawl + Playwright · regex only · zero API cost · ~12-18s/site',
+            'batch': 'Full crawl + Batch AI · 50% cheaper · scrapes first, then batches all AI calls · results in ~10-60min',
+            'batch-fast': 'Fast + Batch AI · 50% cheaper · homepage only · results in ~5-30min',
+        };
         document.querySelectorAll('input[name="scrape-mode"]').forEach(radio => {
             radio.addEventListener('change', () => {
-                const fast = radio.value === 'fast';
-                $('#mode-fast-label').style.cssText = fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
-                $('#mode-full-label').style.cssText = !fast ? 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #3b82f6;background:#0c1929;color:#3b82f6;' : 'display:flex;align-items:center;gap:6px;cursor:pointer;padding:6px 14px;border-radius:8px;font-size:13px;font-weight:600;border:1px solid #27272a;background:transparent;color:#71717a;';
-                $('#mode-desc').textContent = fast ? '20 parallel workers · skips Playwright, FB ads, social, crawl · ~8-12s/site' : '25 parallel workers · full Playwright + AI analysis · ~12-18s/site';
+                document.querySelectorAll('.mode-label').forEach(l => l.classList.remove('active'));
+                radio.closest('.mode-label').classList.add('active');
+                $('#mode-desc').textContent = modeDescs[radio.value] || '';
             });
         });
 
@@ -550,11 +653,140 @@
             $('#progress-count').textContent = `${data.current} / ${data.total}`;
             $('#progress-pct').textContent = pct + '%';
             $('#current-url').textContent = data.current_url || '';
-            if (data.mode) { const mb = $('#mode-badge'); mb.textContent = data.mode.toUpperCase(); mb.className = data.mode === 'fast' ? 'badge badge-warn' : 'badge badge-ok'; }
+            if (data.mode) { const mb = $('#mode-badge'); mb.textContent = data.mode.toUpperCase().replace(/-/g, ' '); mb.className = data.mode.includes('batch') ? 'badge badge-ok' : data.mode.includes('no-ai') ? 'badge badge-warn' : 'badge badge-ok'; }
+            if (data.batch_phase) {
+                const phases = {scraping: 'Scraping sites...', submitting: 'Submitting AI batch...', processing: 'AI batch processing (50% savings)...', merging: 'Merging results...', done: 'Complete'};
+                let phaseText = phases[data.batch_phase] || data.batch_phase;
+                if (data.batch_phase === 'processing' && data.batch_succeeded !== undefined) { phaseText += ` (${data.batch_succeeded}/${data.batch_requests_count || '?'} done)`; }
+                const url = data.current_url || '';
+                $('#current-url').textContent = data.batch_phase === 'scraping' && url ? `${phaseText} · ${url}` : phaseText;
+            }
             $('#stat-success').textContent = data.stats.success || 0;
             $('#stat-failed').textContent = data.stats.failed || 0;
             $('#stat-skipped').textContent = data.stats.no_url || 0;
-            if (data.status === 'done') { clearInterval(pollInterval); $('#done-success').textContent = data.stats.success || 0; $('#done-failed').textContent = data.stats.failed || 0; $('#done-skipped').textContent = data.stats.no_url || 0; $('#done-summary').textContent = `${data.stats.success || 0} of ${data.total || 0} leads enriched.`; $('#download-btn').href = `/download/${currentJobId}`; showStep('done'); }
+            if (data.status === 'done') {
+                clearInterval(pollInterval);
+                refreshUsage(); // Final refresh
+                if (usageInterval) { clearInterval(usageInterval); usageInterval = setInterval(refreshUsage, 30000); }
+                $('#done-success').textContent = data.stats.success || 0;
+                $('#done-failed').textContent = data.stats.failed || 0;
+                $('#done-skipped').textContent = data.stats.no_url || 0;
+                $('#done-summary').textContent = `${data.stats.success || 0} of ${data.total || 0} leads enriched.`;
+                $('#download-btn').href = `/download/${currentJobId}`;
+
+                const q = data.quality;
+                if (q) {
+                    $('#icp-breakdown').style.display = '';
+                    $('#done-green').textContent = q.icp_green || 0;
+                    $('#done-yellow').textContent = q.icp_yellow || 0;
+                    $('#done-red').textContent = q.icp_red || 0;
+                    $('#done-unknown').textContent = q.icp_unknown || 0;
+
+                    const hasDetails = (q.icp_green > 0) || (q.conflicts && q.conflicts.length > 0) || (q.false_negatives && q.false_negatives.length > 0);
+                    if (hasDetails) {
+                        const toggleBtn = $('#toggle-quality-btn');
+                        toggleBtn.style.display = '';
+                        toggleBtn.addEventListener('click', function() {
+                            const el = $('#quality-details');
+                            const hidden = el.classList.toggle('hidden');
+                            this.textContent = hidden ? 'Show Quality Details' : 'Hide Quality Details';
+                        });
+                    }
+
+                    if (q.campaigns && Object.keys(q.campaigns).length > 0) {
+                        $('#quality-campaigns').classList.remove('hidden');
+                        const campaignNames = {A:'Slow Site',B:'Generic Calendly',C:'No Booking',D:'Ad Spend Leak',E:'New Launch',F:'Multi Coach',G:'Post Booking Gap',H:'Brand Gap',I:'Multiple Audiences'};
+                        const maxCount = Math.max(...Object.values(q.campaigns));
+                        let barsHtml = '';
+                        for (const [letter, count] of Object.entries(q.campaigns).sort((a,b) => b[1] - a[1])) {
+                            const pct = Math.round((count / maxCount) * 100);
+                            barsHtml += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                                <span style="color:#93c5fd;font-size:11px;font-weight:700;width:20px;">${letter}</span>
+                                <div style="flex:1;height:18px;background:#18181b;border-radius:4px;overflow:hidden;">
+                                    <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#1e3a5f,#2563eb);border-radius:4px;"></div>
+                                </div>
+                                <span style="color:#d4d4d8;font-size:11px;min-width:60px;">${esc(count)} — ${esc(campaignNames[letter] || letter)}</span>
+                            </div>`;
+                        }
+                        $('#quality-campaign-bars').innerHTML = barsHtml;
+                    }
+
+                    if (q.conflicts && q.conflicts.length > 0) {
+                        $('#quality-conflicts').classList.remove('hidden');
+                        $('#conflict-count').textContent = `(${q.conflicts.length} found)`;
+                        let conflictHtml = '';
+                        for (const c of q.conflicts) {
+                            conflictHtml += `<div style="padding:4px 0;border-bottom:1px solid #141416;">
+                                <span style="color:#60a5fa;">${esc(c.lead)}</span><br>
+                                <span style="color:#71717a;">${esc(c.detail)}</span></div>`;
+                        }
+                        $('#quality-conflict-list').innerHTML = conflictHtml;
+                    }
+
+                    if (q.false_negatives && q.false_negatives.length > 0) {
+                        $('#quality-false-neg').classList.remove('hidden');
+                        $('#false-neg-count').textContent = `(${q.false_negatives.length} leads)`;
+                        let fnHtml = '';
+                        for (const fn of q.false_negatives) {
+                            fnHtml += `<div style="padding:4px 0;border-bottom:1px solid #141416;">
+                                <span style="color:#60a5fa;">${esc(fn.lead)}</span>
+                                — AI: ${esc(fn.booking_ai || 'None')}, Regex: ${esc(fn.booking_regex || 'None detected')}</div>`;
+                        }
+                        $('#quality-false-neg-list').innerHTML = fnHtml;
+                    }
+
+                    if (q.claygent_ran > 0) {
+                        $('#quality-claygent').classList.remove('hidden');
+                        $('#quality-claygent-stats').innerHTML =
+                            `Leads analyzed: ${esc(q.claygent_ran)} · Total cost: $${esc(q.claygent_cost.toFixed(4))} · Navigator would-trigger: ${esc(q.navigator_should_trigger)} · Navigator triggered: ${esc(q.navigator_triggered)} · Booking confidence: ${esc(q.avg_confidence_booking)}`;
+                    }
+
+                if (data.usage) {
+                    const u = data.usage;
+                    $('#quality-usage').classList.remove('hidden');
+                    const isBatch = (data.mode || '').includes('batch');
+                    let usageHtml = `<div style="display:flex; gap:20px; flex-wrap:wrap;">` +
+                        `<span>Tokens in: <b style="color:#d4d4d8;">${fmtTokens(u.tokens_in)}</b></span>` +
+                        `<span>Tokens out: <b style="color:#d4d4d8;">${fmtTokens(u.tokens_out)}</b></span>` +
+                        `<span>Leads with AI: <b style="color:#d4d4d8;">${u.leads_with_ai}</b></span>` +
+                        `<span>Job cost: <b style="color:#f59e0b;">$${u.cost_usd.toFixed(4)}</b></span>`;
+                    if (isBatch && u.batch_savings_usd > 0) {
+                        usageHtml += `<span>Batch savings: <b style="color:#4ade80;">$${u.batch_savings_usd.toFixed(4)}</b></span>` +
+                            `<span style="color:#52525b;">(Realtime would have cost $${(u.cost_usd + u.batch_savings_usd).toFixed(4)})</span>`;
+                    }
+                    if (u.leads_with_ai > 0) {
+                        usageHtml += `<span>Cost/lead: <b style="color:#d4d4d8;">$${(u.cost_usd / u.leads_with_ai).toFixed(4)}</b></span>`;
+                    }
+                    usageHtml += '</div>';
+                    $('#quality-usage-stats').innerHTML = usageHtml;
+                }
+
+                    if (q.green_leads && q.green_leads.length > 0) {
+                        $('#quality-green-leads').classList.remove('hidden');
+                        let tbody = '';
+                        for (const gl of q.green_leads) {
+                            const shortUrl = gl.url ? gl.url.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '') : '-';
+                            tbody += `<tr>
+                                <td>${gl.url ? `<a href="${safeUrl(gl.url)}" target="_blank" rel="noopener" style="color:#60a5fa;text-decoration:none;">${esc(shortUrl)}</a>` : '-'}</td>
+                                <td>${esc(gl.campaign || '-')}</td>
+                                <td>${esc(gl.build_size ? gl.build_size.split(' ')[0] : '-')}</td>
+                                <td>${gl.score ? esc(gl.score) + '/100' : '-'}</td></tr>`;
+                        }
+                        $('#green-leads-body').innerHTML = tbody;
+                    }
+
+                    if (q.icp_green > 0) {
+                        const briefsBtn = $('#download-briefs-btn');
+                        briefsBtn.href = `/briefs/${currentJobId}`;
+                        briefsBtn.style.display = '';
+                        const instantlyBtn = $('#download-instantly-btn');
+                        instantlyBtn.href = `/instantly/${currentJobId}`;
+                        instantlyBtn.style.display = '';
+                    }
+                }
+
+                showStep('done');
+            }
             if (data.status === 'error') { clearInterval(pollInterval); alert('Error: ' + data.error); showStep('upload'); }
         }
 
@@ -568,13 +800,14 @@
         async function startUrlScrape() {
             const url = $('#urlInput').value.trim();
             if (!url) { alert('Please enter a URL'); return; }
+            const mode = $('#url-mode-select').value;
             showStep('url-results');
             $('#url-loading').classList.remove('hidden');
             $('#url-results-content').classList.add('hidden');
             $('#url-scraping').textContent = url;
             let res, data;
             try {
-                res = await fetch('/scrape-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url }) });
+                res = await fetch('/scrape-url', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ url, mode }) });
                 data = await res.json();
             } catch (e) { alert('Could not reach server. Please check it is running.'); showStep('upload'); return; }
             if (data.error) { alert(data.error); showStep('upload'); return; }
@@ -604,22 +837,32 @@
             // === SCORE HERO ===
             const heroC = $('#score-hero-container');
             heroC.innerHTML = '';
+            // Claygent primary fields, fallback to legacy
+            const hasClaygent = results.claygent_status === 'success' || results.claygent_status === 'partial';
             const scoreText = results.ai_overall_score || '';
-            const scoreMatch = scoreText.match(/(\d+)\s*\/\s*10/);
-            const scoreNum = scoreMatch ? parseInt(scoreMatch[1]) : null;
+            const scoreMatch = scoreText.match(/(\d+(?:\.\d+)?)\s*\/\s*10/);
+            const scoreNum = scoreMatch ? parseFloat(scoreMatch[1]) : (results.icp_score_numeric != null ? Math.round(results.icp_score_numeric / 10) : null);
             const scoreClass = scoreNum >= 7 ? 'score-high' : scoreNum >= 4 ? 'score-mid' : 'score-low';
-            const classification = results.ai_classification || '';
-            const icpFit = (results.ai_icp_fit || '').trim().toUpperCase();
+            const classification = results.icp_classification || results.ai_classification || '';
+            const icpFit = (results.icp_fit || results.ai_icp_fit || '').trim().toUpperCase();
             const icpClass = icpFit === 'YES' ? 'icp-yes' : icpFit === 'NO' ? 'icp-no' : 'icp-unknown';
+            const icpScore = results.icp_score || '';
+            const icpScoreClass = icpScore === 'GREEN' ? 'claygent-green' : icpScore === 'YELLOW' ? 'claygent-yellow' : icpScore === 'RED' ? 'claygent-red' : '';
+            const campaignBucket = results.campaign_bucket || '';
             const siteUrl = results.website_url || results.final_url || '';
-            const justification = scoreText.replace(/\d+\s*\/\s*10\s*[-—]?\s*/, '').trim();
+            const justification = results.icp_classification_reason || scoreText.replace(/\d+(?:\.\d+)?\s*\/\s*10\s*[-—]?\s*/, '').trim();
 
             heroC.innerHTML = `<div class="score-hero">
-                <div class="score-ring ${scoreNum !== null ? scoreClass : 'score-mid'}">${scoreNum !== null ? scoreNum + '<span class="score-sub">/10</span>' : '-'}</div>
+                <div class="score-ring ${scoreNum !== null ? scoreClass : 'score-mid'}">${scoreNum !== null ? Math.round(scoreNum) + '<span class="score-sub">/10</span>' : '-'}</div>
                 <div class="score-meta">
                     <h2>${esc(siteUrl)}</h2>
                     <div class="classification">${esc(classification)}</div>
-                    <span class="icp-badge ${icpClass}">ICP FIT: ${esc(icpFit) || 'N/A'}</span>
+                    <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                        <span class="icp-badge ${icpClass}">ICP FIT: ${esc(icpFit) || 'N/A'}</span>
+                        ${icpScore ? `<span class="claygent-badge ${icpScoreClass}">${esc(icpScore)}</span>` : ''}
+                        ${campaignBucket ? `<span class="campaign-bucket" title="${esc(results.campaign_reason || '')}">${esc(campaignBucket)}</span>` : ''}
+                        ${hasClaygent ? '<span style="font-size:10px; color:#3b82f6; font-weight:600;">CLAYGENT</span>' : ''}
+                    </div>
                 </div>
                 ${justification ? `<div class="score-justification">${esc(justification)}</div>` : ''}
             </div>`;
@@ -628,42 +871,62 @@
             const qsC = $('#quick-stats-container');
             qsC.innerHTML = '';
             const psScore = results.pagespeed_score_performance;
-            const bookingTool = results.booking_booking_tool || 'None';
-            const ctaWorks = results.booking_booking_cta_works || 'Unknown';
+            // Claygent primary → legacy fallback
+            const bookingTool = results.booking_tool || results.booking_booking_tool || 'None';
+            const confBooking = results.confidence_booking || '';
+            const confClass = confBooking === 'HIGH' ? 'conf-high' : confBooking === 'MEDIUM_HIGH' ? 'conf-medium' : confBooking === 'LOW' ? 'conf-low' : 'conf-none';
+            const buildSize = results.build_size_estimate || '';
             const fbAds = results.fbads_fb_ads_count || 0;
             const totalFollowers = results.social_social_total_followers || 0;
-            const pagesScraped = results.crawl_pages_scraped || 0;
+            const platform = results.claygent_platform || '';
 
             const psClass = psScore >= 90 ? 'qs-good' : psScore >= 50 ? 'qs-warn' : psScore != null ? 'qs-bad' : '';
-            const ctaClass = ctaWorks === 'Yes' ? 'qs-good' : ctaWorks.includes('Likely') ? 'qs-warn' : ctaWorks.includes('broken') || ctaWorks.includes('Broken') ? 'qs-bad' : '';
 
             qsC.innerHTML = `<div class="quick-stats">
                 <div class="quick-stat"><div class="qs-value ${psClass}">${psScore != null ? esc(psScore) : '-'}</div><div class="qs-label">PageSpeed</div></div>
-                <div class="quick-stat"><div class="qs-value">${esc(bookingTool)}</div><div class="qs-label">Booking Tool</div></div>
-                <div class="quick-stat"><div class="qs-value ${ctaClass}">${esc(ctaWorks.length > 20 ? ctaWorks.substring(0,18) + '...' : ctaWorks)}</div><div class="qs-label">CTA Status</div></div>
+                <div class="quick-stat"><div class="qs-value">${esc(bookingTool)}${confBooking ? ` <span class="conf-badge ${confClass}" style="font-size:8px;">${esc(confBooking)}</span>` : ''}</div><div class="qs-label">Booking Tool</div></div>
+                <div class="quick-stat"><div class="qs-value">${esc(buildSize ? buildSize.split(' ')[0] : '-')}</div><div class="qs-label">Build Size</div></div>
                 <div class="quick-stat"><div class="qs-value">${esc(fbAds)}</div><div class="qs-label">FB Ads</div></div>
                 <div class="quick-stat"><div class="qs-value">${typeof totalFollowers === 'number' ? esc(totalFollowers.toLocaleString()) : esc(totalFollowers)}</div><div class="qs-label">Followers</div></div>
-                <div class="quick-stat"><div class="qs-value">${esc(pagesScraped)}</div><div class="qs-label">Pages Crawled</div></div>
+                <div class="quick-stat"><div class="qs-value">${esc(platform || '-')}</div><div class="qs-label">Platform</div></div>
             </div>`;
 
             // === AI SECTION ===
             const aiC = $('#ai-section-container');
             aiC.innerHTML = '';
+
+            // Claygent fields take priority, fallback to legacy Haiku fields
             const aiFields = [
-                { key: 'ai_audit_summary', label: 'Audit Summary' },
-                { key: 'ai_positioning_gaps', label: 'Positioning Gaps' },
-                { key: 'ai_outreach_hooks', label: 'Outreach Hooks' },
+                { key: 'audit_summary', fallback: 'ai_audit_summary', label: 'Audit Summary' },
+                { key: 'positioning_gaps', fallback: 'ai_positioning_gaps', label: 'Positioning Gaps' },
+                { key: 'observation_hook', fallback: null, label: 'Primary Outreach Hook', isClaygent: true },
+                { key: 'secondary_observations', fallback: null, label: 'Backup Observations', isClaygent: true },
+                { key: 'ai_outreach_hooks', fallback: null, label: 'Outreach Hooks', isLegacy: true },
+                { key: 'positioning_detail', fallback: null, label: 'Positioning Detail', isClaygent: true },
             ];
-            if (aiFields.some(f => results[f.key])) {
-                let aiHtml = '<div class="ai-section"><h3>AI Analysis</h3>';
-                for (const field of aiFields) {
-                    const val = results[field.key];
+
+            const visibleFields = aiFields.filter(f => {
+                const val = results[f.key] || (f.fallback && results[f.fallback]);
+                if (!val) return false;
+                // Hide legacy hooks if Claygent hook exists
+                if (f.isLegacy && results.observation_hook) return false;
+                // Hide Claygent-only fields if Claygent didn't run
+                if (f.isClaygent && !hasClaygent) return false;
+                return true;
+            });
+
+            if (visibleFields.length > 0) {
+                let aiHtml = `<div class="ai-section"><h3>${hasClaygent ? 'Claygent AI Analysis' : 'AI Analysis'}${hasClaygent && results.claygent_cost_usd ? ` <span style="font-size:11px; color:#3f3f46; font-weight:400;">$${results.claygent_cost_usd.toFixed(4)}</span>` : ''}</h3>`;
+                for (const field of visibleFields) {
+                    const val = results[field.key] || (field.fallback && results[field.fallback]);
                     if (!val) continue;
-                    let content = esc(val);
-                    if (field.key === 'ai_outreach_hooks') {
-                        const lines = val.split(/\n/).filter(l => l.trim());
-                        const items = lines.map(l => l.replace(/^\d+[\.\)]\s*/, '').trim()).filter(Boolean);
+                    let content = '';
+                    if (field.key === 'secondary_observations' || field.key === 'ai_outreach_hooks') {
+                        const items = Array.isArray(val) ? val : String(val).split(/\n/).filter(l => l.trim()).map(l => l.replace(/^\d+[\.\)]\s*/, '').trim()).filter(Boolean);
                         if (items.length > 1) content = '<ol>' + items.map(i => `<li>${esc(i)}</li>`).join('') + '</ol>';
+                        else content = esc(items[0] || val);
+                    } else {
+                        content = esc(val);
                     }
                     aiHtml += `<div class="ai-block"><div class="ai-block-label">${esc(field.label)}</div><div class="ai-block-content">${content}</div></div>`;
                 }
@@ -673,22 +936,36 @@
 
             // === CATEGORY DEFINITIONS ===
             const allCategories = [
-                { name: 'Booking Infrastructure', group: 'main', open: true, fields: {
-                    'booking_booking_tool': 'Booking Tool', 'booking_booking_tool_branded': 'Branded/Generic', 'booking_booking_cta_above_fold': 'CTA Above Fold',
-                    'booking_pre_call_sequence_visible': 'Pre-Call Sequence', 'booking_clicks_to_book': 'Clicks to Book', 'booking_booking_cta_works': 'CTA Works',
-                    'booking_has_contact_form': 'Contact Form', 'booking_booking_links': 'Booking Links' }},
-                { name: 'Offer Details', group: 'main', open: true, fields: {
-                    'offer_offer_type': 'Offer Type', 'offer_price_range': 'Price Range', 'offer_price_points': 'Price Points', 'offer_pricing_page_exists': 'Pricing Page',
-                    'offer_pricing_page_url': 'Pricing URL', 'offer_application_required': 'Application Required', 'offer_sales_model': 'Sales Model',
-                    'offer_target_client': 'Target Client', 'offer_solo_or_multi_coach': 'Solo/Multi Coach', 'offer_offer_description': 'Description' }},
+                // Claygent Intelligence (only shows when Claygent ran)
+                ...(hasClaygent ? [{ name: 'Claygent Intelligence', group: 'main', open: true, fields: {
+                    'booking_tool': 'Booking Tool', 'booking_url': 'Booking URL', 'booking_branded': 'Branded Booking', 'booking_pre_call_sequence': 'Pre-Call Sequence',
+                    'booking_cta_above_fold': 'CTA Above Fold', 'booking_friction_score': 'Friction Score (1-10)', 'booking_false_negative_risk': 'False Negative Risk', 'booking_notes': 'Booking Notes',
+                    'offer_primary': 'Primary Offer', 'offer_secondary': 'Secondary Offers', 'offer_requires_booking': 'Requires Booking',
+                    'offer_target_audience': 'Target Audience', 'price_visible': 'Price Visible', 'price_range': 'Price Range', 'price_meets_2k_threshold': 'Meets $2K Threshold',
+                    'positioning': 'Positioning', 'positioning_detail': 'Positioning Detail', 'primary_identity': 'Primary Identity',
+                    'icp_score': 'ICP Score', 'icp_score_numeric': 'ICP Numeric (0-100)', 'icp_classification': 'Classification', 'icp_classification_reason': 'Reason',
+                    'campaign_bucket': 'Campaign Bucket', 'campaign_reason': 'Campaign Reason', 'build_size_estimate': 'Build Size',
+                    'disqualifiers': 'Disqualifiers',
+                    'confidence_booking': 'Confidence: Booking', 'confidence_pricing': 'Confidence: Pricing', 'confidence_positioning': 'Confidence: Positioning',
+                    'confidence_conflicts': 'AI vs Regex Conflicts',
+                }}] : []),
+                { name: 'Booking Infrastructure', group: 'main', open: !hasClaygent, fields: {
+                    'booking_booking_tool': 'Booking Tool', 'regex_booking_booking_tool': 'Regex: Tool', 'regex_booking_booking_tool_branded': 'Branded/Generic',
+                    'regex_booking_booking_cta_above_fold': 'CTA Above Fold', 'regex_booking_pre_call_sequence_visible': 'Pre-Call Sequence',
+                    'regex_booking_clicks_to_book': 'Clicks to Book', 'regex_booking_booking_cta_works': 'CTA Works',
+                    'regex_booking_has_contact_form': 'Contact Form', 'regex_booking_booking_links': 'Booking Links' }},
+                { name: 'Offer Details', group: 'main', open: !hasClaygent, fields: {
+                    'offer_offer_type': 'Offer Type', 'offer_price_range': 'Price Range', 'regex_offer_price_points': 'Price Points', 'regex_offer_pricing_page_exists': 'Pricing Page',
+                    'regex_offer_pricing_page_url': 'Pricing URL', 'regex_offer_application_required': 'Application Required', 'offer_sales_model': 'Sales Model',
+                    'offer_target_client': 'Target Client', 'offer_solo_or_multi_coach': 'Solo/Multi Coach', 'regex_offer_offer_description': 'Description' }},
                 { name: 'Technical Gaps', group: 'main', open: true, fields: {
                     'gaps_has_ssl': 'SSL', 'gaps_ssl_issues': 'SSL Issues', 'gaps_missing_favicon': 'Missing Favicon', 'gaps_outdated_footer_year': 'Outdated Footer',
                     'gaps_placeholder_text_found': 'Placeholder Text', 'gaps_conflicting_ctas': 'Conflicting CTAs', 'gaps_cta_count': 'CTA Count',
                     'gaps_cta_unique_actions': 'Unique CTA Actions', 'gaps_broken_links': 'Broken Links', 'gaps_technical_issues_summary': 'Issues Summary' }},
-                { name: 'Audience Signals', group: 'main', open: true, fields: {
-                    'audience_serves_multiple_audiences': 'Multiple Audiences', 'audience_audience_segments': 'Segments', 'audience_has_active_blog': 'Active Blog',
-                    'audience_latest_blog_date': 'Latest Blog', 'audience_has_podcast': 'Podcast', 'audience_has_youtube': 'YouTube',
-                    'audience_testimonial_count': 'Testimonials', 'audience_social_proof_media_mentions': 'Media Mentions' }},
+                { name: 'Audience Signals', group: 'main', open: !hasClaygent, fields: {
+                    'regex_audience_serves_multiple_audiences': 'Multiple Audiences', 'regex_audience_audience_segments': 'Segments', 'regex_audience_has_active_blog': 'Active Blog',
+                    'regex_audience_latest_blog_date': 'Latest Blog', 'regex_audience_has_podcast': 'Podcast', 'regex_audience_has_youtube': 'YouTube',
+                    'regex_audience_testimonial_count': 'Testimonials', 'regex_audience_social_proof_media_mentions': 'Media Mentions' }},
                 { name: 'Paid Ads', group: 'main', fields: {
                     'ads_has_facebook_pixel': 'Facebook Pixel', 'ads_has_google_ads_tag': 'Google Ads', 'ads_likely_running_paid': 'Running Paid Ads',
                     'fbads_fb_ads_found': 'FB Ads Active', 'fbads_fb_ads_count': 'FB Ad Count', 'fbads_fb_ads_library_url': 'Ad Library' }},
@@ -705,7 +982,7 @@
                     'external_domains': 'Domains Found', 'external_link_count': 'Link Count', 'funnel_has_secondary_domain': 'Secondary Domain',
                     'funnel_secondary_funnel_platform': 'Funnel Platform' }},
                 { name: 'Team', group: 'main', fields: {
-                    'team_solo_or_multi_coach': 'Solo/Multi', 'team_team_page_exists': 'Team Page', 'team_team_coach_count': 'Coach Count', 'team_team_coach_names': 'Names' }},
+                    'regex_team_solo_or_multi_coach': 'Solo/Multi', 'regex_team_team_page_exists': 'Team Page', 'regex_team_team_coach_count': 'Coach Count', 'regex_team_team_coach_names': 'Names' }},
                 { name: 'Recency', group: 'main', fields: {
                     'timing_site_looks_recent': 'Freshness', 'timing_copyright_year': 'Copyright Year', 'timing_domain_age_years': 'Domain Age',
                     'timing_newest_content_date': 'Newest Content', 'timing_sitemap_last_updated': 'Sitemap Updated', 'timing_http_last_modified': 'Last Modified',
@@ -733,6 +1010,13 @@
                     'schema_has_schema_markup': 'Has Schema', 'schema_schema_types_found': 'Types', 'schema_has_business_schema': 'Business',
                     'schema_has_review_schema': 'Reviews', 'schema_schema_gap_hook': 'Hook' }},
                 { name: 'Confidence', group: 'advanced', fields: { '_confidence': 'Levels' }},
+                ...(hasClaygent ? [{ name: 'Claygent Metadata', group: 'advanced', fields: {
+                    'claygent_status': 'Status', 'claygent_cost_usd': 'Cost (USD)', 'claygent_tokens_in': 'Input Tokens', 'claygent_tokens_out': 'Output Tokens',
+                    'claygent_processing_seconds': 'Processing Time (s)', 'claygent_platform': 'Detected Platform', 'claygent_content_length': 'Content Length (chars)',
+                    'claygent_subpages_fetched': 'Subpages Fetched', 'claygent_navigator_triggered': 'Navigator Triggered', 'claygent_navigator_should_trigger': 'Navigator Should Trigger',
+                    'ai_certainty_booking': 'AI Certainty: Booking', 'ai_certainty_positioning': 'AI Certainty: Positioning',
+                    'ai_certainty_pricing': 'AI Certainty: Pricing', 'ai_certainty_icp': 'AI Certainty: ICP',
+                }}] : []),
             ];
 
             // Format value helper
@@ -743,13 +1027,43 @@
                 } else if (key === '_confidence' && typeof value === 'object') {
                     d = Object.entries(value).map(([k, v]) => { const s = String(v || ''); return `<span class="conf-badge conf-${s.toLowerCase()}">${esc(k)}: ${esc(s)}</span>`; }).join(' ');
                     return { d, cls, isHtml: true };
+                } else if (key === 'confidence_conflicts' && Array.isArray(value)) {
+                    d = value.map(v => `<div style="font-size:11px;color:#94a3b8;padding:2px 0;">${esc(v)}</div>`).join('');
+                    return { d, cls, isHtml: true };
                 } else if (typeof value === 'object' && value !== null) {
                     d = JSON.stringify(value);
                 } else if (typeof value === 'boolean') {
                     d = value ? 'Yes' : 'No';
-                    const neg = key.includes('broken') || key.includes('missing') || key.includes('outdated') || key.includes('placeholder') || key.includes('conflicting') || key.includes('excessive') || key.includes('no_context') || key.includes('mismatch');
+                    const neg = key.includes('broken') || key.includes('missing') || key.includes('outdated') || key.includes('placeholder') || key.includes('conflicting') || key.includes('excessive') || key.includes('no_context') || key.includes('mismatch') || key.includes('false_negative');
                     cls = neg ? (value ? 'bad' : 'good') : (value ? 'good' : 'warn');
                 }
+                // Confidence badge fields
+                if (key.startsWith('confidence_') && !key.includes('conflicts') && typeof value === 'string') {
+                    const s = value.toUpperCase();
+                    const cc = s === 'HIGH' ? 'conf-high' : s === 'MEDIUM_HIGH' ? 'conf-medium' : s === 'LOW' ? 'conf-low' : 'conf-none';
+                    d = `<span class="conf-badge ${cc}">${esc(value)}</span>`;
+                    return { d, cls, isHtml: true };
+                }
+                // ICP score coloring
+                if (key === 'icp_score' && typeof value === 'string') {
+                    const sc = value.toUpperCase();
+                    d = `<span class="claygent-badge ${sc === 'GREEN' ? 'claygent-green' : sc === 'YELLOW' ? 'claygent-yellow' : sc === 'RED' ? 'claygent-red' : ''}">${esc(value)}</span>`;
+                    return { d, cls, isHtml: true };
+                }
+                // Campaign bucket
+                if (key === 'campaign_bucket' && typeof value === 'string' && value.length <= 2) {
+                    d = `<span class="campaign-bucket">${esc(value)}</span>`;
+                    return { d, cls, isHtml: true };
+                }
+                // AI certainty as percentage bar
+                if (key.startsWith('ai_certainty_') && typeof value === 'number') {
+                    const pct = Math.round(value * 100);
+                    const cc = pct >= 70 ? '#4ade80' : pct >= 40 ? '#facc15' : '#f87171';
+                    d = `<span style="color:${cc};font-weight:700;">${pct}%</span>`;
+                    return { d, cls, isHtml: true };
+                }
+                // Cost formatting
+                if (key === 'claygent_cost_usd' && typeof value === 'number') { d = '$' + value.toFixed(4); }
                 if (key.startsWith('pagespeed_score_') && typeof value === 'number') { cls = value >= 90 ? 'ps-good' : value >= 50 ? 'ps-mid' : 'ps-bad'; d = value + '/100'; }
                 if (typeof d === 'string' && /^https?:\/\//.test(d)) {
                     const short = d.length > 50 ? d.substring(0, 48) + '...' : d;
@@ -865,6 +1179,31 @@
                 $('#health-bar').innerHTML = '<span class="health-title">Services</span><span class="health-chip fail"><span class="dot"></span>Server unreachable</span>';
             }
         })();
+
+        // Usage tracking — poll every 5s
+        function fmtTokens(n) {
+            if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+            if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+            return String(n);
+        }
+
+        async function refreshUsage() {
+            try {
+                const res = await fetch('/usage');
+                const u = await res.json();
+                $('#usage-cost').textContent = '$' + u.cost_usd.toFixed(4);
+                $('#usage-tokens').textContent = fmtTokens(u.tokens_in + u.tokens_out);
+                $('#usage-leads').textContent = u.leads_analyzed;
+                $('#usage-jobs').textContent = u.total_jobs;
+                if (u.batch_savings_usd > 0) {
+                    $('#usage-savings-wrap').style.display = '';
+                    $('#usage-savings').textContent = '$' + u.batch_savings_usd.toFixed(4);
+                }
+            } catch (e) { /* silent */ }
+        }
+        let usageInterval = null;
+        refreshUsage();
+        usageInterval = setInterval(refreshUsage, 5000);
     </script>
 </body>
 </html>

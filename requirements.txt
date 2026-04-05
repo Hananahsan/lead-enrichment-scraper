@@ -9,3 +9,4 @@ anthropic
 python-whois
 feedparser
 python-dateutil
+curl_cffi>=0.7.0

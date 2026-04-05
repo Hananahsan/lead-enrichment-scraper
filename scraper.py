@@ -33,7 +33,17 @@ if _env_path.exists():
 
 import warnings
 import pandas as pd
-import requests
+import requests  # Keep for exception types and as fallback
+
+# curl_cffi impersonates real browser TLS fingerprints (JA3/JA4)
+# This is the #1 fix for 403 bot-blocking — sites block Python's requests
+# TLS fingerprint before even looking at headers.
+try:
+    from curl_cffi import requests as cffi_requests
+    HAS_CURL_CFFI = True
+except ImportError:
+    HAS_CURL_CFFI = False
+
 from bs4 import BeautifulSoup, XMLParsedAsHTMLWarning
 
 warnings.filterwarnings("ignore", category=XMLParsedAsHTMLWarning)
@@ -64,34 +74,59 @@ try:
 except ImportError:
     HAS_CLAUDE = False
 
+try:
+    from claygent import (
+        run_claygent, claygent_collect, prepare_batch_request,
+        build_intel_snapshot, submit_batch, poll_batch,
+        retrieve_batch_results, apply_batch_results_to_intel,
+    )
+    HAS_CLAYGENT = True
+except ImportError:
+    HAS_CLAYGENT = False
+
 # Rotating User-Agent pool — different fingerprint per request
+# Rotating User-Agent pool — 2026-current browser versions
+# Updated March 2026. Review quarterly — stale versions are a detection signal.
 _USER_AGENTS = [
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:122.0) Gecko/20100101 Firefox/122.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36 Edg/122.0.0.0",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:123.0) Gecko/20100101 Firefox/123.0",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 OPR/106.0.0.0",
-    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:122.0) Gecko/20100101 Firefox/122.0",
+    # Chrome 131-133 (Windows + macOS) — ~65% of real traffic
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/133.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.0.0 Safari/537.36",
+    # Edge 131-132 (Windows) — ~5% of real traffic
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36 Edg/131.0.0.0",
+    # Firefox 133-135 (Windows + macOS + Linux) — ~8% of real traffic
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:134.0) Gecko/20100101 Firefox/134.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:133.0) Gecko/20100101 Firefox/133.0",
+    "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0",
+    # Safari 18.x (macOS) — ~18% of real traffic
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Safari/605.1.15",
 ]
 
 _BROWSER_USER_AGENTS = [
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/121.0.6167.66 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-    "Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.6167.101 Mobile Safari/537.36",
-    "Mozilla/5.0 (Linux; Android 13; SM-S908B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.280 Mobile Safari/537.36",
+    # iPhone — iOS 18.x with Safari and Chrome
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_3 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.3 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_2 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/132.0.6834.78 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1",
+    # Android — Chrome 131-132
+    "Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/132.0.6834.79 Mobile Safari/537.36",
+    "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.6778.200 Mobile Safari/537.36",
 ]
 
 
 def _get_headers():
-    """Get request headers with a random User-Agent + stealth browser fingerprint headers."""
+    """Get request headers with a random User-Agent + synced Sec-CH-UA fingerprint.
+
+    Sec-CH-UA version MUST match the Chrome version in the User-Agent.
+    Mismatched versions are a detection signal.
+    """
     ua = random.choice(_USER_AGENTS)
-    is_chrome = "Chrome/" in ua
+    is_chrome = "Chrome/" in ua and "Edg/" not in ua
+    is_edge = "Edg/" in ua
     is_firefox = "Firefox/" in ua
+    is_safari = "Version/" in ua and "Safari/" in ua and "Chrome/" not in ua
+
     headers = {
         "User-Agent": ua,
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -101,12 +136,28 @@ def _get_headers():
         "Upgrade-Insecure-Requests": "1",
         "Cache-Control": "max-age=0",
     }
-    # Chrome-specific Sec- headers that WAFs check for
+
+    # Extract Chrome version from UA for Sec-CH-UA sync
+    chrome_match = re.search(r"Chrome/(\d+)", ua)
+    chrome_ver = chrome_match.group(1) if chrome_match else "132"
+
     if is_chrome:
         headers.update({
-            "Sec-CH-UA": '"Chromium";v="122", "Google Chrome";v="122", "Not(A:Brand";v="24"',
+            "Sec-CH-UA": f'"Chromium";v="{chrome_ver}", "Google Chrome";v="{chrome_ver}", "Not_A Brand";v="24"',
             "Sec-CH-UA-Mobile": "?0",
-            "Sec-CH-UA-Platform": '"macOS"' if "Macintosh" in ua else '"Windows"',
+            "Sec-CH-UA-Platform": '"macOS"' if "Macintosh" in ua else ('"Linux"' if "Linux" in ua else '"Windows"'),
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "none",
+            "Sec-Fetch-User": "?1",
+        })
+    elif is_edge:
+        edge_match = re.search(r"Edg/(\d+)", ua)
+        edge_ver = edge_match.group(1) if edge_match else chrome_ver
+        headers.update({
+            "Sec-CH-UA": f'"Chromium";v="{chrome_ver}", "Microsoft Edge";v="{edge_ver}", "Not_A Brand";v="24"',
+            "Sec-CH-UA-Mobile": "?0",
+            "Sec-CH-UA-Platform": '"Windows"',
             "Sec-Fetch-Dest": "document",
             "Sec-Fetch-Mode": "navigate",
             "Sec-Fetch-Site": "none",
@@ -119,6 +170,8 @@ def _get_headers():
             "Sec-Fetch-Site": "none",
             "Sec-Fetch-User": "?1",
         })
+    # Safari: no Sec-CH-UA headers (Safari doesn't send them)
+
     return headers
 
 
@@ -161,8 +214,28 @@ print(json.dumps(result, default=str))
     return None
 
 
+def _claygent_navigator_browse(url):
+    """Wrapper for claygent Navigator — used by _run_playwright_task subprocess.
+
+    _run_playwright_task imports from scraper.py, so Navigator needs this wrapper
+    that imports from claygent.py. The subprocess gets a clean process.
+    """
+    from claygent import _navigator_browse
+    return _navigator_browse(url)
+
+
+# curl_cffi impersonation profiles to rotate with User-Agents
+_IMPERSONATE_PROFILES = [
+    "chrome", "chrome", "chrome",  # Weighted toward Chrome (most common)
+    "chrome", "chrome",
+    "safari",
+    "firefox",
+]
+
+
 def _retry_request(method, url, max_retries=2, **kwargs):
-    """Make an HTTP request with retry + exponential backoff on 403/429/5xx."""
+    """Make an HTTP request with retry + exponential backoff on 403/429/5xx.
+    Rotates User-Agent and TLS impersonation profile per attempt."""
     kwargs.setdefault("timeout", TIMEOUT)
     original_headers = kwargs.pop("headers", {}) or {}
     for attempt in range(max_retries + 1):
@@ -170,6 +243,12 @@ def _retry_request(method, url, max_retries=2, **kwargs):
             req_headers = dict(original_headers)
             req_headers["User-Agent"] = random.choice(_USER_AGENTS)
             kwargs["headers"] = req_headers
+
+            # Rotate TLS impersonation on retries (curl_cffi only)
+            if HAS_CURL_CFFI and attempt > 0:
+                profile = random.choice(_IMPERSONATE_PROFILES)
+                kwargs["impersonate"] = profile
+
             resp = method(url, **kwargs)
             if resp.status_code in (403, 429, 503) and attempt < max_retries:
                 wait = (2 ** attempt) + random.uniform(0.5, 1.5)
@@ -280,9 +359,16 @@ class BrowserPool:
 _browser_pool = BrowserPool(size=15)
 atexit.register(_browser_pool.shutdown)
 
-# Shared requests.Session for connection pooling (DNS cache + keep-alive)
-_http_session = requests.Session()
-_http_session.headers.update(_get_headers())
+# Shared HTTP session — uses curl_cffi for TLS fingerprint impersonation,
+# falls back to plain requests if curl_cffi not installed.
+if HAS_CURL_CFFI:
+    # impersonate="chrome" makes the TLS handshake identical to real Chrome.
+    # This passes JA3/JA4 fingerprint checks that block Python's requests library.
+    _http_session = cffi_requests.Session(impersonate="chrome")
+    _http_session.headers.update(_get_headers())
+else:
+    _http_session = requests.Session()
+    _http_session.headers.update(_get_headers())
 
 
 BOOKING_TOOLS = {
@@ -384,9 +470,8 @@ def fetch_page_simple(url, timeout=TIMEOUT, browser_fallback=True):
         resp.raise_for_status()
         soup = BeautifulSoup(resp.text, "html.parser")
         return resp, soup
-    except requests.exceptions.HTTPError:
-        return None, None
     except Exception:
+        # Catches both requests.exceptions.HTTPError and curl_cffi.requests.errors.RequestsError
         return None, None
 
 
@@ -933,7 +1018,14 @@ def analyze_performance(resp, soup, url):
     }
 
     # Load time (approximate from response time)
-    data["load_time_seconds"] = round(resp.elapsed.total_seconds(), 2)
+    # curl_cffi returns elapsed as float (seconds), requests returns timedelta
+    elapsed = resp.elapsed
+    if hasattr(elapsed, 'total_seconds'):
+        data["load_time_seconds"] = round(elapsed.total_seconds(), 2)
+    elif isinstance(elapsed, (int, float)):
+        data["load_time_seconds"] = round(float(elapsed), 2)
+    else:
+        data["load_time_seconds"] = None
 
     # Page size
     content_length = len(resp.content)
@@ -2611,7 +2703,13 @@ def crawl_site(base_url, soup, max_pages=MAX_CRAWL_PAGES):
 # =============================================================================
 
 def check_facebook_ads(url):
-    """Check Facebook Ad Library for active ads on this domain."""
+    """Check Facebook Ad Library for active ads on this domain.
+
+    Loads the Ad Library search page in a headless browser and extracts the
+    result count from the page text. Also scrapes visible ad card text for
+    details. The page text approach ("130 results") is the most reliable
+    signal — Meta's GraphQL only returns filter metadata, not ad counts.
+    """
     data = {
         "fb_ads_found": False,
         "fb_ads_count": 0,
@@ -2620,112 +2718,229 @@ def check_facebook_ads(url):
     }
 
     domain = urlparse(url).netloc.replace("www.", "")
+    ad_library_url = (
+        f"https://www.facebook.com/ads/library/"
+        f"?active_status=active&ad_type=all&country=ALL"
+        f"&q={domain}&search_type=keyword_unordered"
+    )
 
+    if not HAS_PLAYWRIGHT:
+        data["fb_ads_status"] = "Requires headless browser (Playwright not available)"
+        data["fb_ads_library_url"] = ad_library_url
+        return data
+
+    pw = None
+    browser = None
+    context = None
     try:
-        # Method 1: Search Facebook Ad Library page for the domain
-        ad_library_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=ALL&q={domain}&search_type=keyword_unordered"
+        pw = sync_playwright().start()
+        browser = pw.chromium.launch(headless=True)
+        context = browser.new_context(
+            user_agent=random.choice(_USER_AGENTS),
+            viewport={"width": 1280, "height": 900},
+            locale="en-US",
+        )
+        page = context.new_page()
 
-        if HAS_PLAYWRIGHT:
-            # Use a dedicated Playwright instance on this thread to avoid
-            # cross-thread greenlet errors with the shared browser pool.
-            pw = None
-            browser = None
-            context = None
+        page.goto(ad_library_url, wait_until="domcontentloaded", timeout=30000)
+        try:
+            page.wait_for_load_state("networkidle", timeout=20000)
+        except Exception:
+            pass
+        # Wait for client-side rendering to complete
+        page.wait_for_timeout(4000)
+
+        # --- Extract page text with retries ---
+        page_text = ""
+        for _attempt in range(3):
             try:
-                pw = sync_playwright().start()
-                browser = pw.chromium.launch(headless=True)
-                context = browser.new_context(user_agent=random.choice(_USER_AGENTS))
-                page = context.new_page()
-                page.goto(ad_library_url, wait_until="domcontentloaded", timeout=30000)
-                # Facebook Ad Library does client-side navigation after load;
-                # wait for network idle then extract content with retries
-                try:
-                    page.wait_for_load_state("networkidle", timeout=15000)
-                except Exception:
-                    pass
-                page.wait_for_timeout(3000)
+                page_text = page.inner_text("body") if page.query_selector("body") else ""
+                if page_text and len(page_text) > 100:
+                    break
+            except Exception:
+                page.wait_for_timeout(2000)
 
-                # Retry content extraction — page may still be navigating
-                page_text = ""
-                for _attempt in range(3):
-                    try:
-                        page_text = page.inner_text("body") if page.query_selector("body") else ""
-                        if page_text:
-                            break
-                    except Exception:
-                        page.wait_for_timeout(2000)
+        # --- Method 1: Parse result count from page text ---
+        if page_text:
+            # "No results" patterns — use word boundaries to avoid matching
+            # "130 results" as "0 results"
+            no_result_patterns = [
+                r"\bno\s+results\b",
+                r"didn.?t\s+find",
+                r"\b0\s+results\b",
+                r"\bno\s+ads\s*(?:found|match|available)",
+                r"there\s+are\s+no\s+ads",
+            ]
+            found_no_results = any(
+                re.search(p, page_text, re.I) for p in no_result_patterns
+            )
 
-                results_match = re.search(r"(\d+)\s*results?", page_text, re.I)
-                no_results = re.search(r"no\s*results|didn.?t\s*find|0\s*results", page_text, re.I)
-
-                if no_results:
-                    data["fb_ads_found"] = False
-                    data["fb_ads_status"] = "No active ads found"
-                elif results_match:
-                    count = int(results_match.group(1))
-                    if count > 0:
-                        data["fb_ads_found"] = True
-                        data["fb_ads_count"] = count
-                        data["fb_ads_status"] = f"{count} active ad(s) found"
-                    else:
-                        data["fb_ads_status"] = "No active ads found"
-                else:
-                    try:
-                        ad_cards = page.query_selector_all('[class*="ad"], [data-testid*="ad"]')
-                        if ad_cards and len(ad_cards) > 0:
+            if found_no_results:
+                data["fb_ads_status"] = "No active ads found"
+            else:
+                # Result count patterns (Meta uses "~130 results" in Ad Library)
+                count_patterns = [
+                    r"~?([\d,]+)\s*results?",
+                    r"[Ss]howing\s+~?([\d,]+)\s+ads?",
+                    r"[Ff]ound\s+~?([\d,]+)\s+ads?",
+                    r"~?([\d,]+)\s+active\s+ads?",
+                    r"[Aa]bout\s+~?([\d,]+)\s+ads?",
+                ]
+                for pattern in count_patterns:
+                    match = re.search(pattern, page_text, re.I)
+                    if match:
+                        count = int(match.group(1).replace(",", ""))
+                        if count > 0:
                             data["fb_ads_found"] = True
-                            data["fb_ads_count"] = len(ad_cards)
-                            data["fb_ads_status"] = f"~{len(ad_cards)} ad(s) detected"
+                            data["fb_ads_count"] = count
+                            data["fb_ads_status"] = f"{count} active ad(s) found"
                         else:
-                            data["fb_ads_status"] = "Could not determine (page structure changed)"
-                    except Exception:
-                        data["fb_ads_status"] = "Could not determine (page structure changed)"
+                            data["fb_ads_status"] = "No active ads found"
+                        break
 
-                if data["fb_ads_found"]:
+        # --- Method 2: Extract ad details from page text ---
+        # The page text contains blocks like:
+        #   "See ad details\nTony Robbins\nSponsored\nAd copy here..."
+        # We find all "Sponsored" markers and look at surrounding lines.
+        if data["fb_ads_found"] and page_text:
+            try:
+                all_lines = page_text.split("\n")
+                ad_entries = []
+
+                for i, line in enumerate(all_lines):
+                    if line.strip() != "Sponsored":
+                        continue
+
+                    # Page name is the line immediately before "Sponsored"
+                    page_name = ""
+                    if i > 0:
+                        candidate = all_lines[i - 1].strip()
+                        # Skip empty/short lines, menu items, etc.
+                        if candidate and len(candidate) >= 2 and candidate not in (
+                            "Menu", "See ad details", "See summary details",
+                            "EU transparency",
+                        ):
+                            page_name = candidate
+
+                    # Ad body is lines after "Sponsored"
+                    body_lines = []
+                    for line2 in all_lines[i + 1:]:
+                        line2 = line2.strip()
+                        if not line2:
+                            continue
+                        if line2 in ("Learn more", "Learn More", "Apply Now",
+                                     "Sign Up", "Shop Now", "Download",
+                                     "Sorry, we're having trouble with playing this video."):
+                            break
+                        if line2.startswith("Library ID:") or line2 == "Sponsored":
+                            break
+                        body_lines.append(line2)
+                        if len(" ".join(body_lines)) > 150:
+                            break
+
+                    detail = ""
+                    if page_name:
+                        detail = f"Page: {page_name}"
+                    if body_lines:
+                        body = " ".join(body_lines)[:150]
+                        detail = f"{detail} | {body}" if detail else body
+                    if detail:
+                        ad_entries.append(detail)
+
+                # Deduplicate by page name
+                seen_pages = set()
+                for d in ad_entries:
+                    page_part = d.split(" | ")[0] if " | " in d else d
+                    if page_part not in seen_pages:
+                        seen_pages.add(page_part)
+                        data["fb_ads_details"].append(d)
+                    if len(data["fb_ads_details"]) >= 5:
+                        break
+
+            except Exception:
+                pass  # Details are optional — count is what matters
+
+        # --- Relevance validation ---
+        # If we have ad details, check if any are from pages related to the domain.
+        # This filters out false positives from keyword matches (e.g., "example.com"
+        # matching 50K random ads that mention the word).
+        if data["fb_ads_found"] and data["fb_ads_details"]:
+            domain_base = domain.split(".")[0].lower()  # e.g. "tonyrobbins"
+            # Generate match variants: "tonyrobbins", "tony robbins", "tony", "robbins"
+            domain_words = set()
+            # Split camelCase/concatenated: "tonyrobbins" → {"tony", "robbins"}
+            # Also split on hyphens/underscores
+            for sep in ["-", "_"]:
+                domain_base_split = domain_base.replace(sep, " ")
+                for w in domain_base_split.split():
+                    if len(w) >= 3:
+                        domain_words.add(w)
+            domain_words.add(domain_base)
+
+            relevant_count = 0
+            for detail in data["fb_ads_details"]:
+                # Normalize: remove spaces/special chars for comparison
+                detail_lower = detail.lower()
+                detail_compressed = re.sub(r"[^a-z0-9]", "", detail_lower)
+                if domain_base in detail_compressed:
+                    relevant_count += 1
+                elif any(w in detail_lower for w in domain_words if len(w) >= 4):
+                    relevant_count += 1
+                elif domain in detail_lower:
+                    relevant_count += 1
+
+            if relevant_count == 0 and len(data["fb_ads_details"]) >= 3:
+                # None of the visible ads are related to this domain
+                data["fb_ads_found"] = False
+                data["fb_ads_count"] = 0
+                data["fb_ads_status"] = "No ads from this domain (keyword matches only)"
+                data["fb_ads_details"] = []
+
+        # --- Method 3: DOM count fallback (if text parsing failed) ---
+        if not data["fb_ads_found"] and data["fb_ads_status"] == "Not checked":
+            try:
+                ad_containers = page.query_selector_all('[role="article"]')
+                visible_count = 0
+                for el in ad_containers:
                     try:
-                        ad_elements = page.query_selector_all('[class*="ad-card"], [class*="_7jyr"]')
-                        for i, el in enumerate(ad_elements[:3]):
-                            try:
-                                ad_text = el.inner_text()[:200]
-                                data["fb_ads_details"].append(ad_text)
-                            except Exception:
-                                pass
+                        box = el.bounding_box()
+                        if box and box["height"] > 50:
+                            visible_count += 1
                     except Exception:
                         pass
-
-            except Exception as e:
-                err_msg = str(e)[:100]
-                if "timeout" in err_msg.lower():
-                    data["fb_ads_status"] = "Check failed (timeout)"
+                if visible_count > 0:
+                    data["fb_ads_found"] = True
+                    data["fb_ads_count"] = visible_count
+                    data["fb_ads_status"] = f"~{visible_count} ad(s) detected (DOM)"
                 else:
-                    data["fb_ads_status"] = f"Check failed (browser error: {err_msg})"
-            finally:
-                try:
-                    if context:
-                        context.close()
-                except Exception:
-                    pass
-                try:
-                    if browser:
-                        browser.close()
-                except Exception:
-                    pass
-                try:
-                    if pw:
-                        pw.stop()
-                except Exception:
-                    pass
+                    data["fb_ads_status"] = "No active ads found"
+            except Exception:
+                data["fb_ads_status"] = "Could not determine (page structure changed)"
+
+    except Exception as e:
+        err_msg = str(e)[:100]
+        if "timeout" in err_msg.lower():
+            data["fb_ads_status"] = "Check failed (timeout)"
         else:
-            # Without Playwright, try a simple heuristic check via the website itself
-            # Check if site has Facebook Pixel (already done in ads analysis)
-            data["fb_ads_status"] = "Requires headless browser (Playwright not available)"
+            data["fb_ads_status"] = f"Check failed (browser error: {err_msg})"
+    finally:
+        try:
+            if context:
+                context.close()
+        except Exception:
+            pass
+        try:
+            if browser:
+                browser.close()
+        except Exception:
+            pass
+        try:
+            if pw:
+                pw.stop()
+        except Exception:
+            pass
 
-        # Add the Ad Library link for manual checking
-        data["fb_ads_library_url"] = ad_library_url
-
-    except Exception:
-        data["fb_ads_status"] = "Check failed"
-
+    data["fb_ads_library_url"] = ad_library_url
     return data
 
 
@@ -2928,7 +3143,17 @@ def scrape_social_profiles(soup, html):
 # =============================================================================
 
 def generate_ai_analysis(intel):
-    """Use Claude to generate a natural-language audit summary with outreach hooks."""
+    """LEGACY FALLBACK — Use Claude Haiku to generate audit summary with outreach hooks.
+
+    This function is the pre-Claygent AI analysis. It reads a SUMMARY of already-extracted
+    regex fields (not raw page content). It only runs when Claygent fails or is disabled.
+
+    When Claygent succeeds, this function is NOT called — Claygent's Sonnet-based analysis
+    replaces all fields this function would produce (ai_classification, ai_icp_fit,
+    ai_audit_summary, ai_positioning_gaps, ai_outreach_hooks, ai_overall_score).
+
+    Do NOT delete this function — it serves as the graceful degradation path.
+    """
     data = {
         "classification": "",
         "icp_fit": "",
@@ -3121,12 +3346,16 @@ def find_subpages(soup, base_url):
 # MAIN SCRAPE
 # =============================================================================
 
-def scrape_website(url, fast=False):
+def scrape_website(url, fast=False, no_ai=False, defer_ai=False):
     """Scrape a website against the full checklist.
 
     fast=True: skips Playwright browser, FB ads, social media, full crawl.
                Uses requests only. ~10-15s per site instead of ~60s.
                Best for batch processing 100+ leads.
+    no_ai=True: same as fast but also skips Claygent AI (regex only, cheapest mode).
+    defer_ai=True: collects content + all slow tasks but skips the Claude API call.
+                   Returns intel dict with extra keys '_claygent_content' and
+                   '_batch_request' for later batch submission.
     """
     url = normalize_url(url)
     if not url:
@@ -3288,12 +3517,14 @@ def scrape_website(url, fast=False):
         intel["mobile_load_time_seconds"] = resp.mobile_load_time
 
     # ---- Fast analysis (runs on already-fetched HTML, <1s each) ----
-    # 1. Booking infrastructure
+    # These now serve as SILENT VALIDATION — AI (Claygent) is primary
+
+    # 1. Booking infrastructure (DEMOTED to validation)
     booking = analyze_booking(soup, html, links, url)
     for k, v in booking.items():
-        intel[f"booking_{k}"] = v
+        intel[f"regex_booking_{k}"] = v
     if hasattr(resp, "mobile_cta_visible"):
-        intel["booking_booking_cta_above_fold"] = resp.mobile_cta_visible
+        intel["regex_booking_booking_cta_above_fold"] = resp.mobile_cta_visible
 
     # 1b. Paid ads detection
     ads = analyze_paid_ads(soup, html)
@@ -3305,21 +3536,20 @@ def scrape_website(url, fast=False):
     for k, v in perf.items():
         intel[f"perf_{k}"] = v
 
-    # 3. Offer details
+    # 3. Offer details (DEMOTED to validation)
     offer = analyze_offer(soup, text, html, subpages, url)
     for k, v in offer.items():
-        intel[f"offer_{k}"] = v
+        intel[f"regex_offer_{k}"] = v
 
-    # 3b. Solo vs multi-coach
+    # 3b. Solo vs multi-coach (DEMOTED)
     coach = analyze_solo_vs_multi(soup, text, html, subpages, url)
     for k, v in coach.items():
-        intel[f"team_{k}"] = v
-    intel["offer_solo_or_multi_coach"] = coach["solo_or_multi_coach"]
+        intel[f"regex_team_{k}"] = v
 
-    # 4. Audience signals
+    # 4. Audience signals (DEMOTED to validation)
     audience = analyze_audience(soup, text, html, links, subpages)
     for k, v in audience.items():
-        intel[f"audience_{k}"] = v
+        intel[f"regex_audience_{k}"] = v
 
     # 5. Timing/recency signals
     timing = analyze_timing(soup, text, html)
@@ -3418,10 +3648,17 @@ def scrape_website(url, fast=False):
     def _run_booking_redirects():
         return ("booking_redirects", check_booking_redirects(booking))
 
+    def _run_claygent_collect():
+        """Claygent Phase 1: Collect subpage content in parallel (no API call)."""
+        return claygent_collect(url, soup, html, subpages, fast=fast)
+
     if fast:
         # Fast mode: only PageSpeed + timing network (no browser needed)
         # Skip: FB ads (Playwright), social (Playwright), full crawl (50 pages)
         slow_tasks = [_run_pagespeed, _run_timing_network, _run_booking_redirects]
+        # Claygent runs even in fast mode (homepage only) unless --fast-no-ai
+        if not no_ai and HAS_CLAYGENT and HAS_CLAUDE and ANTHROPIC_API_KEY:
+            slow_tasks.append(_run_claygent_collect)
     else:
         # Full mode: everything
         slow_tasks = [
@@ -3429,6 +3666,8 @@ def scrape_website(url, fast=False):
             _run_timing_network, _run_form_fields, _run_booking_brand,
             _run_booking_redirects,
         ]
+        if not no_ai and HAS_CLAYGENT and HAS_CLAUDE and ANTHROPIC_API_KEY:
+            slow_tasks.append(_run_claygent_collect)
 
     with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(fn) for fn in slow_tasks]
@@ -3462,14 +3701,14 @@ def scrape_website(url, fast=False):
     for k, v in crawl.items():
         intel[k] = v
     if crawl.get("crawl_all_prices"):
-        intel["offer_price_points"] = crawl["crawl_all_prices"]
-        intel["offer_price_range"] = crawl["crawl_price_range"]
+        intel["regex_offer_price_points"] = crawl["crawl_all_prices"]
+        intel["regex_offer_price_range"] = crawl["crawl_price_range"]
     if crawl.get("crawl_all_emails"):
         intel["all_emails_found"] = crawl["crawl_all_emails"]
     if crawl.get("crawl_all_phones"):
         intel["all_phones_found"] = crawl["crawl_all_phones"]
-    if crawl.get("crawl_total_testimonials", 0) > intel.get("audience_testimonial_count", 0):
-        intel["audience_testimonial_count"] = crawl["crawl_total_testimonials"]
+    if crawl.get("crawl_total_testimonials", 0) > intel.get("regex_audience_testimonial_count", 0):
+        intel["regex_audience_testimonial_count"] = crawl["crawl_total_testimonials"]
 
     # Confirmation page quality audit (Enhancement 2 — depends on crawl data)
     if crawl:
@@ -3479,7 +3718,7 @@ def scrape_website(url, fast=False):
 
     # Schema gap hook (needs audience data from above)
     if not intel.get("schema_has_business_schema") and (
-        intel.get("audience_social_proof_testimonials") or intel.get("audience_social_proof_media_mentions")
+        intel.get("regex_audience_social_proof_testimonials") or intel.get("regex_audience_social_proof_media_mentions")
     ):
         intel["schema_schema_gap_hook"] = (
             "Your site has no structured data markup — Google can't properly identify your business, "
@@ -3530,7 +3769,7 @@ def scrape_website(url, fast=False):
 
     # Confidence assessment for key fields
     intel["_confidence"] = {
-        "booking_cta_works": "LOW" if "verify manually" in str(intel.get("booking_booking_cta_works", "")) else "HIGH",
+        "booking_cta_works": "LOW" if "verify manually" in str(intel.get("regex_booking_booking_cta_works", "")) else "HIGH",
         "pagespeed": "HIGH" if intel.get("pagespeed_score_performance") is not None else "NONE",
         "fb_ads": "HIGH" if intel.get("fbads_fb_ads_found") else "MEDIUM",
         "social_followers": "MEDIUM",
@@ -3539,11 +3778,90 @@ def scrape_website(url, fast=False):
         "anti_signal_detection": "HIGH",
     }
 
-    # ---- AI analysis (must run last — needs all other data) ----
-    if HAS_CLAUDE and ANTHROPIC_API_KEY:
-        ai = generate_ai_analysis(intel)
-        for k, v in ai.items():
-            intel[f"ai_{k}"] = v
+    # ---- Claygent Phase 2: AI Analysis (runs AFTER all slow tasks merge) ----
+    # Claygent now has the FULL intel dict: PageSpeed scores, FB ads, social
+    # followers, crawl data, form friction — real numbers for observation hooks.
+    claygent_content = slow_results.get("claygent_content")
+    claygent = {}
+
+    if (not no_ai and HAS_CLAYGENT and HAS_CLAUDE and ANTHROPIC_API_KEY
+            and claygent_content is not None):
+
+        # defer_ai mode: prepare batch request instead of calling the API
+        if defer_ai:
+            intel_snapshot = build_intel_snapshot(intel)
+            batch_req = prepare_batch_request(
+                claygent_content, url, intel_snapshot=intel_snapshot or None
+            )
+            intel["_claygent_content"] = claygent_content
+            intel["_batch_request"] = batch_req
+            intel["claygent_status"] = "deferred"
+            # Skip the realtime API call — return intel for batch submission
+            return intel
+
+        try:
+            claygent = run_claygent(
+                url, soup, html, intel, subpages,
+                content_data=claygent_content,
+                fast=fast,
+            )
+        except Exception as cg_err:
+            import logging as _logging
+            _logging.getLogger("claygent").error(f"Claygent analysis failed for {url}: {cg_err}")
+            claygent = {"claygent_status": "failed", "claygent_error": str(cg_err)[:200]}
+
+    if claygent and claygent.get("claygent_status") != "failed":
+        # Claygent fields become PRIMARY (no prefix — these are the main fields now)
+        for k, v in claygent.items():
+            intel[k] = v
+
+        # ---- Backwards compatibility: map Claygent fields to legacy field names ----
+        intel["ai_classification"] = intel.get("icp_classification", "")
+        intel["ai_icp_fit"] = intel.get("icp_fit", "")
+        intel["ai_audit_summary"] = intel.get("audit_summary", "")
+        intel["ai_positioning_gaps"] = intel.get("positioning_gaps", "")
+        intel["ai_outreach_hooks"] = intel.get("observation_hook", "")
+        if intel.get("secondary_observations"):
+            secondary = intel["secondary_observations"]
+            if isinstance(secondary, list):
+                intel["ai_outreach_hooks"] += " | " + " | ".join(str(s) for s in secondary)
+        # Map icp_score_numeric (0-100) to overall_score (X/10)
+        numeric = intel.get("icp_score_numeric", 0)
+        if isinstance(numeric, (int, float)):
+            intel["ai_overall_score"] = f"{round(numeric / 10, 1)}/10"
+        else:
+            intel["ai_overall_score"] = "N/A"
+        # Keep the old offer/booking field names as aliases
+        intel["offer_offer_type"] = intel.get("offer_primary", "")
+        intel["offer_price_range"] = intel.get("price_range", "")
+        intel["offer_target_client"] = intel.get("offer_target_audience", "")
+        intel["offer_sales_model"] = "Application-based" if intel.get("offer_requires_booking") else "Unknown"
+        intel["booking_booking_tool"] = intel.get("booking_tool", "")
+        intel["offer_solo_or_multi_coach"] = intel.get("regex_team_solo_or_multi_coach", "Unknown")
+    else:
+        # GRACEFUL DEGRADATION: Claygent failed or didn't run —
+        # promote regex fields back to primary names
+        for key in list(intel.keys()):
+            if key.startswith("regex_booking_"):
+                primary_key = key.replace("regex_booking_", "booking_")
+                intel[primary_key] = intel[key]
+            elif key.startswith("regex_offer_"):
+                primary_key = key.replace("regex_offer_", "offer_")
+                intel[primary_key] = intel[key]
+            elif key.startswith("regex_team_"):
+                primary_key = key.replace("regex_team_", "team_")
+                intel[primary_key] = intel[key]
+            elif key.startswith("regex_audience_"):
+                primary_key = key.replace("regex_audience_", "audience_")
+                intel[primary_key] = intel[key]
+        # Also restore the convenience alias
+        intel["offer_solo_or_multi_coach"] = intel.get("regex_team_solo_or_multi_coach", "Unknown")
+
+        # Run legacy Haiku analysis as fallback
+        if HAS_CLAUDE and ANTHROPIC_API_KEY:
+            ai = generate_ai_analysis(intel)
+            for k, v in ai.items():
+                intel[f"ai_{k}"] = v
 
     return intel
 
@@ -3552,7 +3870,7 @@ def scrape_website(url, fast=False):
 # CSV PROCESSING (CLI usage)
 # =============================================================================
 
-def process_csv(input_path, output_path, fast=False):
+def process_csv(input_path, output_path, fast=False, no_ai=False):
     df = pd.read_csv(input_path)
 
     website_col = None
@@ -3566,7 +3884,7 @@ def process_csv(input_path, output_path, fast=False):
         print("ERROR: No website/URL column found.")
         sys.exit(1)
 
-    mode_label = "FAST" if fast else "FULL"
+    mode_label = "FAST (no AI)" if no_ai else ("FAST" if fast else "FULL")
     workers = MAX_WORKERS_FAST if fast else MAX_WORKERS
     print(f"Found website column: '{website_col}'")
     print(f"Processing {len(df)} leads in {mode_label} mode ({workers} concurrent)...\n")
@@ -3578,7 +3896,7 @@ def process_csv(input_path, output_path, fast=False):
         if not url or url.lower() in ("nan", "none", ""):
             return idx, {"scrape_status": "no_url"}
         print(f"  [{idx+1}/{len(df)}] Scraping {url}...")
-        return idx, scrape_website(url, fast=fast)
+        return idx, scrape_website(url, fast=fast, no_ai=no_ai)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = {
@@ -3609,15 +3927,31 @@ def process_csv(input_path, output_path, fast=False):
     print(f"  - {sum(1 for _, i in results if i.get('scrape_status') == 'failed')} failed")
     print(f"  - {sum(1 for _, i in results if i.get('scrape_status') == 'no_url')} had no URL")
 
+    # Claygent cost summary
+    total_claygent_cost = sum(
+        r.get("claygent_cost_usd", 0)
+        for _, r in results
+        if isinstance(r.get("claygent_cost_usd"), (int, float))
+    )
+    nav_triggers = sum(1 for _, r in results if r.get("claygent_navigator_triggered"))
+    if total_claygent_cost > 0:
+        print(f"  - Claygent AI cost: ${total_claygent_cost:.2f}")
+        print(f"  - Navigator triggered: {nav_triggers}/{len(results)} leads ({nav_triggers / max(len(results), 1) * 100:.0f}%)")
+        if nav_triggers / max(len(results), 1) > 0.30:
+            print(f"  WARNING: Navigator trigger rate above 30% -- review content collector quality")
+
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python3 scraper.py <input.csv> [output.csv] [--fast]")
-        print("  --fast  Skip browser, FB ads, social, crawl (10x faster for large batches)")
+        print("Usage: python3 scraper.py <input.csv> [output.csv] [--fast] [--no-ai] [--fast-no-ai]")
+        print("  --fast        Skip browser, FB ads, social, crawl. Claygent runs with homepage only.")
+        print("  --no-ai       Skip Claygent AI in any mode (full or fast). Regex only, zero API cost.")
+        print("  --fast-no-ai  Same as --fast --no-ai combined.")
         sys.exit(1)
 
-    fast_mode = "--fast" in sys.argv
-    args = [a for a in sys.argv[1:] if a != "--fast"]
+    fast_mode = "--fast" in sys.argv or "--fast-no-ai" in sys.argv
+    no_ai_mode = "--no-ai" in sys.argv or "--fast-no-ai" in sys.argv
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
     input_file = args[0]
     output_file = args[1] if len(args) > 1 else input_file.replace(".csv", "_enriched.csv")
-    process_csv(input_file, output_file, fast=fast_mode)
+    process_csv(input_file, output_file, fast=fast_mode, no_ai=no_ai_mode)
